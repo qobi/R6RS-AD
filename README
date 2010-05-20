@@ -13,11 +13,12 @@ http://engineering.purdue.edu/~qobi
 The entire contents of this directory copyright 2010 Purdue University, All
 rights reserved.
 
-These are some AD tools for both forward and reverse mode written for R6RS
-Scheme. The run under Ikarus and PLT Scheme. Also included are some
-experimental packages to support nondeterministic and stochastic programming,
-including constraint satisfaction problems.
+These are some AD (Automatic Differentiation) tools for both forward
+and reverse mode written for R6RS Scheme.  They run under Ikarus and
+PLT Scheme.  Also included are some experimental packages to support
+nondeterministic and stochastic programming, including constraint
+satisfaction problems.
 
 This code is completely unsupported.
 
-It is licensed under the GPL v2.0 or later, see the enclosed file COPYING.
+It is licensed under the GPL v2 or later, see the enclosed file COPYING.
