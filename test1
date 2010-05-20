@@ -1,0 +1,10 @@
+#!/usr/bin/env /home/qobi/schemes/install/bin/scheme-script
+
+(import (rnrs) (nondeterministic-scheme))
+
+(write (domain (a-member-of '(1 2 3))))
+(newline)
+
+;;; Local Variables:
+;;; eval: (scheme-mode)
+;;; End:
