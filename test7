@@ -1,0 +1,12 @@
+#!/usr/bin/env /home/qobi/schemes/install/bin/scheme-script
+
+(import (rnrs) (stochastic-montague-grammar))
+
+(write (generate))
+(newline)
+(write (understand))
+(newline)
+
+;;; Local Variables:
+;;; eval: (scheme-mode)
+;;; End:
