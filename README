@@ -1,0 +1,23 @@
+Thursday 20 May 2010
+
+Jeffrey Mark Siskind
+School of Electrical and Computer Engineering
+Purdue University
+465 Northwestern Avenue
+West Lafayette IN 47907-2035 USA
+voice: 765/496-3197
+fax: 765/494-6440
+qobi@purdue.edu
+http://engineering.purdue.edu/~qobi
+
+The entire contents of this directory copyright 2010 Purdue University, All
+rights reserved.
+
+These are some AD tools for both forward and reverse mode written for R6RS
+Scheme. The run under Ikarus and PLT Scheme. Also included are some
+experimental packages to support nondeterministic and stochastic programming,
+including constraint satisfaction problems.
+
+This code is completely unsupported.
+
+It is licensed under the GPL v2.0 or later, see the enclosed file COPYING.
