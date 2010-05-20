@@ -1,0 +1,12 @@
+#!/usr/bin/env /home/qobi/schemes/install/bin/scheme-script
+
+(import (rnrs) (games))
+
+(write (random-game *tic-tac-toe*))
+(newline)
+(write (random-game *hexapawn*))
+(newline)
+
+;;; Local Variables:
+;;; eval: (scheme-mode)
+;;; End:
