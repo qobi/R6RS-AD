@@ -1,0 +1,10 @@
+#!/usr/bin/env /home/qobi/schemes/install/bin/scheme-script
+
+(import (rnrs)
+	(nondeterministic-scheme)
+	(nondeterministic-constraints)
+	(QobiScheme))
+
+;;; Local Variables:
+;;; eval: (scheme-mode)
+;;; End:
