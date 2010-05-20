@@ -1,0 +1,69 @@
+#!/usr/bin/env /home/qobi/schemes/install/bin/scheme-script
+
+(import (rnrs)
+	(QobiScheme)
+	(stochastic-scheme)
+	(stochastic-promises)
+	(reduced-gradient)
+	(games2))
+
+(define (tic-tac-toe-initial-state)
+ (make-state
+  '#(#(#f #f #f) #(#f #f #f) #(#f #f #f)) '#(x x x x x) '#(o o o o o) 'x))
+
+(define (hexapawn-initial-state)
+ (make-state
+  '#(#(x x x) #(#f #f #f) #(o o o)) '#(#f #f #f #f #f) '#(#f #f #f #f #f) 'x))
+
+(define (words) (remove-duplicates (map second *lexicon*)))
+
+(define (word-mixture) (uniform (length (words))))
+
+(define (word-draw mixture)
+ (delayed-draw (map cons (words) (vector->list mixture))))
+
+(define (restn n l) (if (zero? n) l (restn (- n 1) (rest l))))
+
+(define (word-distribution mixture)
+ (remove-if (lambda (pair) (zero? (cdr pair)))
+	    (map cons (words) (vector->list mixture))))
+
+(define (learn-tic-tac-toe-initial-state n)
+ (map-vector
+  word-distribution
+  (argmax
+   (lambda (mixtures)
+    (probability
+     (distribution
+      (initial-state?
+       (list
+	(append
+	 (map-n (lambda (i) (word-draw (vector-ref mixtures i))) n)
+	 (restn
+	  n
+	  '(every cache square for every player in the initial state has some
+		  piece of that player))))
+       (tic-tac-toe-initial-state)))))
+   (map-n-vector (lambda (i) (word-mixture)) n))))
+
+(define (learn-tic-tac-toe-win1)
+ (argmax
+  (lambda (mixtures)
+   (probability
+    (distribution
+     (initial-state?
+      (list (map-n (lambda (i) (word-draw (vector-ref mixtures i))) 15))
+      (make-state
+       '#(#(x x x) #(#f #f #f) #(#f #f #f))
+       '#(x x x x x)
+       '#(o o o o o)
+       'x)))))
+  (map-n-vector (lambda (i) (word-mixture)) 15)))
+
+(write
+ (learn-tic-tac-toe-initial-state (string->number (second (command-line)))))
+(newline)
+
+;;; Local Variables:
+;;; eval: (scheme-mode)
+;;; End:
