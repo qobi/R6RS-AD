@@ -1,0 +1,7 @@
+#!/usr/bin/env /home/qobi/schemes/install/bin/scheme-script
+
+(import (rnrs) (stochastic-scheme) (stochastic-constraints) (QobiScheme))
+
+;;; Local Variables:
+;;; eval: (scheme-mode)
+;;; End:
