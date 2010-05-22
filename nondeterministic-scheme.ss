@@ -33,9 +33,8 @@
 	    (set! *a-boolean* saved-a-boolean)
 	    (set! *fail* saved-fail)
 	    (c (reverse domain))))
-
-     (let ((result (thunk)))
-      (set! domain (cons result domain)))
+     (let ((value (thunk)))
+      (set! domain (cons value domain)))
      (fail)))))
 
  (define-syntax domain
