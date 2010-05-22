@@ -39,7 +39,8 @@
 	    (set! *flip* saved-flip)
 	    (set! *bottom* saved-bottom)
 	    (c (reverse distribution))))
-     (set! distribution (cons (cons (thunk) p) distribution))
+     (let ((result (thunk)))
+      (set! distribution (cons (cons result p) distribution)))
      (bottom)))))
 
  (define-syntax distribution
