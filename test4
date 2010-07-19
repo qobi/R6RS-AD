@@ -1,4 +1,4 @@
-#!/usr/bin/env /home/qobi/schemes/install/bin/scheme-script
+#!/usr/bin/env scheme-script
 
 (import (rnrs) (stochastic-scheme) (stochastic-constraints) (QobiScheme))
 
