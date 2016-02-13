@@ -1,0 +1,11 @@
+#!/usr/bin/env scheme-script
+
+(import (rnrs) (vlad))
+
+;;;\needswork: get command-line argument
+
+(vlad "test1.vlad")
+
+;;; Local Variables:
+;;; eval: (scheme-mode)
+;;; End:
