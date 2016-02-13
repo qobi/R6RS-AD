@@ -1278,7 +1278,6 @@
       (error #f "height=? expression not of type boolean"))
      (make-height=?-expression
       (loop (second expression) 'thing variables types) (third expression)))
-
     ((and (list? expression)
 	  (= (length expression) 3)
 	  (eq? (first expression) 'left-of?))
