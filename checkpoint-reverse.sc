@@ -741,12 +741,65 @@
 	       (il:apply
 		;; This continuation won't be called with the checkpoint
 		;; computation but will be called upon resume.
-		;;\needswork: This continuation needs to do step
-		;;            4. (c,x`)=*j(\x.checkpoint(f,x,n),x,c`)
-		;;            then package up the result as
-		;;            (list (first value6) (second value7))
-		;;            then call the entry continuation.
-		continuation
+		(il:make-continuation
+		 ;; This closes over value4 and checkpoint5 only for consistency
+		 ;; checking.
+		 (lambda (value6 count6 continuation value1 value2 value4
+				 checkpoint5)
+		  ;; 4. (c,x`)=*j(\x.checkpoint(f,x,n),x,c`)
+		  ;; f is value1
+		  ;; x is value2
+		  ;; c` is (second value6)
+		  ;; c is (first value7)
+		  ;; x` is (second value7)
+		  (unless (equal? value4 (first value6))
+		   (error #f "(not (equal? value4 (first value6)))"))
+		  (il:checkpoint-*j
+		   (il:make-continuation
+		    ;; This closes over checkpoint5 only for consistency
+		    ;; checking
+		    (lambda (value7 count7 continuation checkpoint5 value6)
+		     (unless (= count7 (+ count (quotient (- count4 count) 2)))
+		      (error #f "(not (= count7 (+ count (quotient (- count4 count) 2))))"))
+		     (unless (equal? checkpoint5 (first value7))
+		      (error #f "(not (equal? checkpoint5 (first value7)))"))
+		     (il:call-continuation
+		      ;; This fakes the count as if both halves of the
+		      ;; computation were executed exactly once.
+		      continuation
+		      (list (first value6) (second value7))
+		      count4))
+		    continuation
+		    checkpoint5
+		    value6)
+		   ;; This is a closure that behaves like \x.checkpoint(f,x,n).
+		   (make-il:closure
+		    (make-il:lambda-expression
+		     'x
+		     (make-il:binary-expression
+		      (lambda (continuation8 value8 value9 count8 limit8)
+		       (unless (= count8 count)
+			(error #f "(not (= count8 count))"))
+		       (unless (= limit8
+				  (+ count (quotient (- count4 count) 2)))
+			(error #f "(not (= limit8 (+ count (quotient (- count4 count) 2))))"))
+		       (il:apply continuation8 value8 value9 count8 limit8))
+		      (make-il:variable-access-expression 'f)
+		      (make-il:variable-access-expression 'x)))
+		    (list (make-il:binding 'f value1)))
+		   value2
+		   (second value6)
+		   ;; This is for the first half of the computation.
+		   count
+		   ;; If (zero? (quotient (- count4 count) 2)) then the
+		   ;; evaluation could checkpoint right at the start without
+		   ;; making any progress. But that can't happen.
+		   (+ count (quotient (- count4 count) 2))))
+		 continuation
+		 value1
+		 value2
+		 value4
+		 checkpoint5)
 		value1
 		value2
 		;; This is for the first half of the computation.
@@ -762,61 +815,8 @@
 	 ;; y is (first value6)
 	 ;; c` is (second value6)
 	 (il:checkpoint-*j
-	  ;;\needswork: This continuation will become continuation10 and never
-	  ;;            be called.
-	  (il:make-continuation
-	   (lambda (value6 count6 continuation value1 value2 value4 checkpoint5)
-	    ;; 4. (c,x`)=*j(\x.checkpoint(f,x,n),x,c`)
-	    ;; f is value1
-	    ;; x is value2
-	    ;; c` is (second value6)
-	    ;; c is (first value7)
-	    ;; x` is (second value7)
-	    (unless (equal? value4 (first value6))
-	     (error #f "(not (equal? value4 (first value6)))"))
-	    (il:checkpoint-*j
-	     (il:make-continuation
-	      (lambda (value7 count7 continuation checkpoint5 value6)
-	       (unless (= count7 (+ count (quotient (- count4 count) 2)))
-		(error
-		 #f "(not (= count7 (+ count (quotient (- count4 count) 2))))"))
-	       (unless (equal? checkpoint5 (first value7))
-		(error #f "(not (equal? checkpoint5 (first value7)))"))
-	       (il:call-continuation
-		;; This fakes the count as if both halves of the computation
-		;; were executed exactly once.
-		continuation (list (first value6) (second value7)) count4))
-	      continuation
-	      checkpoint5
-	      value6)
-	     ;; This is a closure that behaves like \x.checkpoint(f,x,n).
-	     (make-il:closure
-	      (make-il:lambda-expression
-	       'x
-	       (make-il:binary-expression
-		(lambda (continuation8 value8 value9 count8 limit8)
-		 (unless (= count8 count) (error #f "(not (= count8 count))"))
-		 (unless (= limit8 (+ count (quotient (- count4 count) 2)))
-		  (error
-		   #f
-		   "(not (= limit8 (+ count (quotient (- count4 count) 2))))"))
-		 (il:apply continuation8 value8 value9 count8 limit8))
-		(make-il:variable-access-expression 'f)
-		(make-il:variable-access-expression 'x)))
-	      (list (make-il:binding 'f value1)))
-	     value2
-	     (second value6)
-	     ;; This is for the first half of the computation.
-	     count
-	     ;; If (zero? (quotient (- count4 count) 2)) then the evaluation
-	     ;; could checkpoint right at the start without making any
-	     ;; progress. But that can't happen.
-	     (+ count (quotient (- count4 count) 2))))
-	   continuation
-	   value1
-	   value2
-	   value4
-	   checkpoint5)
+	  ;; This continuation will become continuation10 and never be called.
+	  'continuation10
 	  ;; This is a closure that behaves like \c.resume(c).
 	  (make-il:closure
 	   (make-il:lambda-expression
