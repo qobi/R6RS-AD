@@ -742,10 +742,8 @@
 		;; This continuation won't be called with the checkpoint
 		;; computation but will be called upon resume.
 		(il:make-continuation
-		 ;; This closes over value4 and checkpoint5 only for consistency
-		 ;; checking.
-		 (lambda (value6 count6 continuation value1 value2 value4
-				 checkpoint5)
+		 ;; This closes over value4 only for consistency checking.
+		 (lambda (value6 count6 continuation value1 value2 value4)
 		  ;; 4. (c,x`)=*j(\x.checkpoint(f,x,n),x,c`)
 		  ;; f is value1
 		  ;; x is value2
@@ -756,13 +754,11 @@
 		   (error #f "(not (equal? value4 (first value6)))"))
 		  (il:checkpoint-*j
 		   (il:make-continuation
-		    ;; This closes over checkpoint5 only for consistency
-		    ;; checking
-		    (lambda (value7 count7 continuation checkpoint5 value6)
+		    (lambda (value7 count7 continuation value6)
 		     (unless (= count7 (+ count (quotient (- count4 count) 2)))
 		      (error #f "(not (= count7 (+ count (quotient (- count4 count) 2))))"))
-		     (unless (equal? checkpoint5 (first value7))
-		      (error #f "(not (equal? checkpoint5 (first value7)))"))
+		     ;; We can't check that (equal? checkpoint5 (first value7))
+		     ;; because we can't close over checkpoint5.
 		     (il:call-continuation
 		      ;; This fakes the count as if both halves of the
 		      ;; computation were executed exactly once.
@@ -770,7 +766,6 @@
 		      (list (first value6) (second value7))
 		      count4))
 		    continuation
-		    checkpoint5
 		    value6)
 		   ;; This is a closure that behaves like \x.checkpoint(f,x,n).
 		   (make-il:closure
@@ -798,8 +793,7 @@
 		 continuation
 		 value1
 		 value2
-		 value4
-		 checkpoint5)
+		 value4)
 		value1
 		value2
 		;; This is for the first half of the computation.
@@ -856,3 +850,293 @@
   value2
   count
   limit))
+
+(define (read-source pathname)
+ ;; default extension removed
+ ;; include removed
+ (call-with-input-file pathname
+  (lambda (input-port)
+   (let loop ((es '()))
+    (let ((e (read input-port)))
+     (if (eof-object? e) (reverse es) (loop (cons e es))))))))
+
+(define (concrete-variable? x)
+ (and (symbol? x)
+      (not (memq x '(quote
+		     lambda
+		     letrec
+		     let
+		     let*
+		     if
+		     cons
+		     cons*
+		     list
+		     cond
+		     else
+		     and
+		     or)))))
+
+(define (definens? e)
+ (or (concrete-variable? e)
+     (and (list? e) (not (null? e)) (definens? (first e)))))
+
+(define (definition? d)
+ (and (list? d)
+      (>= (length d) 3)
+      (eq? (first d) 'define)
+      (definens? (second d))
+      (or (not (concrete-variable? (second d))) (= (length d) 3))))
+
+(define (definens-name e)
+ (if (concrete-variable? e) e (definens-name (first e))))
+
+(define (definens-expression e es)
+ (if (concrete-variable? e)
+     (first es)
+     (definens-expression (first e) (list `(lambda ,(rest e) ,@es)))))
+
+(define (expand-definitions ds e)
+ (for-each (lambda (d)
+	    (unless (definition? d) (error #f "Invalid definition: ~s" d)))
+	   ds)
+ (if (null? ds)
+     e
+     `(letrec ,(map (lambda (d)
+		     `(,(definens-name (second d))
+		       ,(definens-expression (second d) (rest (rest d)))))
+		    ds)
+       ,e)))
+
+(define (syntax-check-parameter! p)
+ (cond ((boolean? p) (syntax-check-parameter! `',p))
+       ((real? p) (syntax-check-parameter! `',p))
+       ((concrete-variable? p)
+	(unless (or (concrete-user-variable? p) *wizard?*)
+	 (error #f "Invalid parameter: ~s" p))
+	#f)
+       ((and (list? p) (not (null? p)))
+	(case (first p)
+	 ((quote) (unless (and (= (length p) 2) (value? (second p)))
+		   (error #f "Invalid parameter: ~s" p))
+	  #f)
+	 ((cons)
+	  (unless (= (length p) 3) (error #f "Invalid parameter: ~s" p))
+	  (syntax-check-parameter! (second p))
+	  (syntax-check-parameter! (third p)))
+	 ((cons*) (syntax-check-parameter! (macro-expand p)))
+	 ((list) (syntax-check-parameter! (macro-expand p)))
+	 (else (error #f "Invalid parameter: ~s" p))))
+       (else (error #f "Invalid parameter: ~s" p))))
+
+(define (valid-body? es)
+ (and (not (null? es)) (every definition? (but-last es))))
+
+(define (macro-expand-body es) (expand-definitions (but-last es) (last es)))
+
+(define (macro-expand e)
+ (if (and (list? e) (not (null? e)))
+     (case (first e)
+      ((lambda)
+       (unless (and (>= (length e) 3)
+		    (list? (second e))
+		    (valid-body? (rest (rest e))))
+	(error #f "Invalid expression: ~s" e))
+       (case (length (second e))
+	((0) `(lambda ((cons* ,@(second e)))
+	       ,(macro-expand-body (rest (rest e)))))
+	((1) `(lambda ,(second e) ,(macro-expand-body (rest (rest e)))))
+	(else `(lambda ((cons* ,@(second e)))
+		,(macro-expand-body (rest (rest e)))))))
+      ((let) (cond ((and (>= (length e) 3)
+			 (list? (second e))
+			 (every (lambda (b) (and (list? b) (= (length b) 2)))
+				(second e)))
+		    `((lambda ,(map first (second e)) ,@(rest (rest e)))
+		      ,@(map second (second e))))
+		   ((and (>= (length e) 4)
+			 (concrete-variable? (second e))
+			 (list? (third e))
+			 (every (lambda (b) (and (list? b) (= (length b) 2)))
+				(third e)))
+		    `(letrec ((,(second e)
+			       (lambda ,(map first (third e))
+				,@(rest (rest (rest e))))))
+		      (,(second e) ,@(map second (third e)))))
+		   (else (error #f "Invalid expression: ~s" e))))
+      ((let*)
+       (unless (and (>= (length e) 3)
+		    (list? (second e))
+		    (every (lambda (b) (and (list? b) (= (length b) 2)))
+			   (second e))
+		    (valid-body? (rest (rest e))))
+	(error #f "Invalid expression: ~s" e))
+       (case (length (second e))
+	((0) (macro-expand-body (rest (rest e))))
+	((1) `(let ,(second e) ,@(rest (rest e))))
+	(else `(let (,(first (second e)))
+		(let* ,(rest (second e)) ,@(rest (rest e)))))))
+      ((if)
+       (unless (= (length e) 4)
+	(error #f "Invalid expression: ~s" e))
+       ;; needs work: To ensure that you don't shadow if-procedure.
+       `(if-procedure
+	 ,(second e) (lambda () ,(third e)) (lambda () ,(fourth e))))
+      ((cons*) (case (length (rest e))
+		((0) ''())
+		((1) (second e))
+		(else `(cons ,(second e) (cons* ,@(rest (rest e)))))))
+      ((list)
+       (if (null? (rest e)) ''() `(cons ,(second e) (list ,@(rest (rest e))))))
+      ;; We don't allow (cond ... (e) ...) or (cond ... (e1 => e2) ...).
+      ((cond)
+       (unless (and (>= (length e) 2)
+		    (every (lambda (b) (and (list? b) (= (length b) 2)))
+			   (rest e))
+		    (eq? (first (last e)) 'else))
+	(error #f "Invalid expression: ~s" e))
+       (if (null? (rest (rest e)))
+	   (second (second e))
+	   `(if ,(first (second e))
+		,(second (second e))
+		(cond ,@(rest (rest e))))))
+      ((and) (case (length (rest e))
+	      ((0) #t)
+	      ((1) (second e))
+	      (else `(if ,(second e) (and ,@(rest (rest e))) #f))))
+      ((or) (case (length (rest e))
+	     ((0) #f)
+	     ((1) (second e))
+	     (else
+	      (let ((x (gensym)))
+	       `(let ((,x ,(second e))) (if ,x ,x (or ,@(rest (rest e)))))))))
+      (else (case (length (rest e))
+	     ((0) `(,(first e) (cons* ,@(rest e))))
+	     ((1) e)
+	     (else `(,(first e) (cons* ,@(rest e)))))))
+     e))
+
+(define (syntax-check-expression! e)
+ (let loop ((e e) (xs (map value-binding-variable *value-bindings*)))
+  (cond
+   ((boolean? e) (loop `',e xs))
+   ((real? e) (loop `',e xs))
+   ((concrete-variable? e)
+    (unless (memp variable=? (new-variable e) xs)
+     (error #f "Unbound variable: ~s" e))
+    #f)
+   ((and (list? e) (not (null? e)))
+    (case (first e)
+     ((quote)
+      (unless (and (= (length e) 2) (value? (second e)))
+       (error #f "Invalid expression: ~s" e))
+      #f)
+     ((lambda)
+      (unless (and (>= (length e) 3)
+		   (list? (second e))
+		   (valid-body? (rest (rest e))))
+       (error #f "Invalid expression: ~s" e))
+      (case (length (second e))
+       ((0) (loop (macro-expand e) xs))
+       ((1)
+	(syntax-check-parameter! (first (second e)))
+	(let ((xs0 (parameter-variables
+		    (internalize-expression (first (second e))))))
+	 (when (duplicatesp? variable=? xs0)
+	  (error #f "Duplicate variables: ~s" e))
+	 (loop (macro-expand-body (rest (rest e))) (append xs0 xs))))
+       (else (loop (macro-expand e) xs))))
+     ((letrec)
+      (unless (and (>= (length e) 3)
+		   (list? (second e))
+		   (every
+		    (lambda (b)
+		     (and (list? b)
+			  (= (length b) 2) (concrete-variable? (first b))))
+		    (second e)))
+       (error #f "Invalid expression: ~s" e))
+      (let ((xs0 (map (lambda (b) (new-variable (first b))) (second e))))
+       (when (duplicatesp? variable=? xs0)
+	(error #f "Duplicate variables: ~s" e))
+       (for-each
+	(lambda (b)
+	 (let ((e1 (macro-expand (second b))))
+	  (unless (and (list? e1) (= (length e1) 3) (eq? (first e1) 'lambda))
+	   (error #f "Invalid expression: ~s" e))
+	  (loop e1 (append xs0 xs))))
+	(second e))
+       (loop (macro-expand-body (rest (rest e))) (append xs0 xs))))
+     ((let) (loop (macro-expand e) xs))
+     ((let*) (loop (macro-expand e) xs))
+     ((if) (loop (macro-expand e) xs))
+     ((cons)
+      (unless (= (length e) 3) (error #f "Invalid expression: ~s" e))
+      (loop (second e) xs)
+      (loop (third e) xs))
+     ((cons*) (loop (macro-expand e) xs))
+     ((list) (loop (macro-expand e) xs))
+     ((cond) (loop (macro-expand e) xs))
+     ((and) (loop (macro-expand e) xs))
+     ((or) (loop (macro-expand e) xs))
+     (else (case (length (rest e))
+	    ((0) (loop (macro-expand e) xs))
+	    ((1) (loop (first e) xs)
+	     (loop (second e) xs))
+	    (else (loop (macro-expand e) xs))))))
+   (else (error #f "Invalid expression: ~s" e)))))
+
+(define (internalize-expression e)
+ (cond
+  ((boolean? e) (internalize-expression `',e))
+  ((real? e) (internalize-expression `',e))
+  ((concrete-variable? e) (new-variable-access-expression (new-variable e)))
+  ((and (list? e) (not (null? e)))
+   (case (first e)
+    ((quote) (new-constant-expression (internalize (second e))))
+    ((lambda)
+     (case (length (second e))
+      ((0) (internalize-expression (macro-expand e)))
+      ((1) (new-lambda-expression
+	    (internalize-expression (first (second e)))
+	    (internalize-expression (macro-expand-body (rest (rest e))))))
+      (else (internalize-expression (macro-expand e)))))
+    ((letrec)
+     (create-letrec-expression
+      (map (lambda (b) (new-variable (first b))) (second e))
+      (map (lambda (b) (internalize-expression (macro-expand (second b))))
+	   (second e))
+      (internalize-expression (macro-expand-body (rest (rest e))))))
+    ((let) (internalize-expression (macro-expand e)))
+    ((let*) (internalize-expression (macro-expand e)))
+    ((if) (internalize-expression (macro-expand e)))
+    ((cons) (create-cons-expression (internalize-expression (second e))
+				    (internalize-expression (third e))))
+    ((cons*) (internalize-expression (macro-expand e)))
+    ((list) (internalize-expression (macro-expand e)))
+    ((cond) (internalize-expression (macro-expand e)))
+    ((and) (internalize-expression (macro-expand e)))
+    ((or) (internalize-expression (macro-expand e)))
+    (else (case (length (rest e))
+	   ((0) (internalize-expression (macro-expand e)))
+	   ((1) (new-application (internalize-expression (first e))
+				 (internalize-expression (second e))))
+	   (else (internalize-expression (macro-expand e)))))))
+  (else (internal-error))))
+
+(define (parse e)
+ (let ((e (internalize-expression e)))
+  (list e
+	(map (lambda (x)
+	      (find-if (lambda (b) (variable=? x (value-binding-variable b)))
+		       *value-bindings*))
+	     (free-variables e)))))
+
+(define (vlad pathname)
+ (let loop ((es (read-source pathname)) (ds '()))
+  (unless (null? es)
+   (if (definition? (first es))
+       (loop (rest es) (cons (first es) ds))
+       (let ((e (expand-definitions (reverse ds) (first es))))
+	(syntax-check-expression! e)
+	(let* ((result (parse e)) (e (first result)) (bs (second result)))
+	 ...)
+	(loop (rest es) ds))))))
