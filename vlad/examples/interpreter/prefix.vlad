@@ -1,0 +1,23 @@
+(include "math")
+
+(define ((jacobian-using-j* f) x)
+ (let ((n (length x))) (map-n (lambda (i) (cadr (j* f x (e i n)))) n)))
+
+(define ((jacobian-using-*j f) x)
+ (let ((n (length x)))
+  (transpose (map-n (lambda (i) (cadr (*j f x (e i n)))) n))))
+
+(define (jacobian f) (jacobian-using-j* f))
+
+(define ((j-transpose*v f) x y-grave) (cadr (*j f x y-grave)))
+
+(define (prefix l)
+ (letrec ((loop (lambda (a l)
+		 (if (null? l)
+		     '()
+		     (let ((a (+ a (first l)))) (cons a (loop a (rest l))))))))
+  (loop 0 l)))
+
+((jacobian-using-j* prefix) '(0 1 2 3 4))
+((jacobian-using-*j prefix) '(0 1 2 3 4))
+((j-transpose*v prefix) '(0 1 2 3 4) '(0 0 0 0 1))
