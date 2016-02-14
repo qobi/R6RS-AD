@@ -286,7 +286,7 @@
   (cond ((eq? x #t) #t)
 	((eq? x #f) #f)
 	((null? x) '())
-	((real? x) (f x))
+	((dreal? x) (f x))
 	((pair? x) (cons (il:walk1 f (car x)) (il:walk1 f (cdr x))))
 	((il:binding? x)
 	 (make-il:binding (il:binding-variable x)
@@ -316,7 +316,7 @@
    ((and (eq? x #t) (eq? x-prime #t)) #t)
    ((and (eq? x #f) (eq? x-prime #f)) #f)
    ((and (null? x) (null? x-prime)) '())
-   ((and (real? x) (real? x-prime)) (f x x-prime))
+   ((and (dreal? x) (dreal? x-prime)) (f x x-prime))
    ((and (pair? x) (pair? x-prime))
     (cons (il:walk2 f (car x) (car x-prime))
 	  (il:walk2 f (cdr x) (cdr x-prime))))
@@ -373,7 +373,7 @@
   (cond ((eq? x #t) #f)
 	((eq? x #f) #f)
 	((null? x) #f)
-	((real? x) (f x))
+	((dreal? x) (f x))
 	((pair? x) (il:walk1! f (car x)) (il:walk1! f (cdr x)))
 	((il:binding? x) (il:walk1! f (il:binding-value x)))
 	((il:nonrecursive-closure? x)
@@ -391,7 +391,7 @@
    ((and (eq? x #t) (eq? x-prime #t)) #f)
    ((and (eq? x #f) (eq? x-prime #f)) #f)
    ((and (null? x) (null? x-prime)) #f)
-   ((and (real? x) (real? x-prime)) (f x x-prime))
+   ((and (dreal? x) (dreal? x-prime)) (f x x-prime))
    ((and (pair? x) (pair? x-prime))
     (il:walk2! f (car x) (car x-prime))
     (il:walk2! f (cdr x) (cdr x-prime)))
@@ -501,7 +501,8 @@
      limit))
    (else (run-time-error "Not a closure: ~s" value1))))
 
- (define (il:if-procedure value1 value2 value3) (if value1 value2 value3))
+ (define (il:if-procedure continuation value1 value2 value3 count limit)
+  (il:call-continuation continuation (if value1 value2 value3) count))
 
  (define (forward-mode
 	  continuation map-independent map-dependent f x x-perturbation)
@@ -761,7 +762,8 @@
 		   ;; x` is (second value7)
 		   (unless (equal? value4 (first value6))
 		    (internal-error "(not (equal? value4 (first value6)))"))
-		   (il:checkpoint-*j
+		   ;;\needswork: il:checkpoint-*j
+		   (il:*j
 		    (il:make-continuation
 		     (lambda (value7 count7 continuation value6)
 		      (unless (= count7 (+ count (quotient (- count4 count) 2)))
@@ -817,7 +819,8 @@
 	  ;; y` is value3
 	  ;; y is (first value6)
 	  ;; c` is (second value6)
-	  (il:checkpoint-*j
+	  ;;\needswork: il:checkpoint-*j
+	  (il:*j
 	   ;; This continuation will become continuation10 and never be called.
 	   'continuation10
 	   ;; This is a closure that behaves like \c.resume(c).
@@ -928,7 +931,7 @@
        (reverse c)
        (loop (+ i 1) (rest l) (cons (f (first l) i) c)))))
 
- (define (internal-error) (error #f "Internal error"))
+ (define (internal-error . message) (error #f "Internal error" message))
 
  (define (compile-time-error message . arguments)
   (apply error #f message arguments))
@@ -1303,8 +1306,7 @@
       (new-cons-expression (make-il:variable-access-expression 'x2)
 			   (make-il:variable-access-expression 'x3)))
      (make-il:ternary-expression
-      (lambda (continuation value1 value2 value3 count limit)
-       (il:call-continuation continuation (f value1 value2 value3) count))
+      f
       (make-il:variable-access-expression 'x1)
       (make-il:variable-access-expression 'x2)
       (make-il:variable-access-expression 'x3)))
