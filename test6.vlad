@@ -1,0 +1,1 @@
+(checkpoint-*j (lambda (x) (* 3 (* x x))) 1 1)
