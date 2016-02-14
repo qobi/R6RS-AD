@@ -232,19 +232,24 @@
 ;;;\needswork: We don't provide the ability to perform the (co)tangent
 ;;;            computation multiple times after a single primal computation.
 
+;;; This evaluator has all of the same vagaries as the Stalingrad evaluator:
+;;;   constant expressions instead of constant conversion
+;;;   if-procedure
+;;;   parameters
+;;;   cons is syntax
+;;;   +, -, *, /, atan, =, <, >, <=, and >= are binary
+;;;   generalized define
+
  (define-record-type il:constant-expression (fields value))
 
  (define-record-type il:variable-access-expression (fields variable))
 
- (define-record-type il:lambda-expression (fields variable expression))
+ (define-record-type il:lambda-expression (fields parameter expression))
 
  (define-record-type il:unary-expression (fields procedure expression))
 
  (define-record-type il:binary-expression
   (fields procedure expression1 expression2))
-
- (define-record-type il:ternary-expression
-  (fields procedure expression1 expression2 expression3))
 
  (define-record-type il:binding (fields variable value))
 
@@ -387,18 +392,38 @@
 	 count
 	 (il:continuation-values continuation)))
 
+ (define (il:destructure parameter value)
+  (cond ((il:constant-expression? parameter)
+	 (unless (equal? (il:constant-expression-value parameter) value)
+	  (error #f "Argument is not an equivalent value for ~s: ~s"
+		 (il:constant-expression-value parameter)
+		 value))
+	 '())
+	((il:variable-access-expression? parameter)
+	 (list (make-il:binding
+		(il:variable-access-expression-variable parameter) value)))
+	((il:binary-expression? parameter)
+	 (append (il:destructure
+		  (il:binary-expression-expression1 parameter) (car value))
+		 (il:destructure
+		  (il:binary-expression-expression2 parameter) (cdr value))))
+	(else (error #f "Invalid expression: ~s" parameter))))
+
  (define (il:apply continuation value1 value2 count limit)
   (if (il:closure? value1)
       (il:eval
        continuation
        (il:lambda-expression-expression (il:closure-expression value1))
-       (cons (make-il:binding
-	      (il:lambda-expression-variable (il:closure-expression value1))
+       (cons (il:destructure
+	      (il:lambda-expression-parameter (il:closure-expression value1))
 	      value2)
 	     (il:closure-environment value1))
        count
        limit)
       (error #f "Not a closure: ~s" value1)))
+
+ (define (il:if-procedure continuation value1 value2 value3 count limit)
+  (il:call-continuation continuation (if value1 value2 value3) count))
 
  (define (forward-mode
 	  continuation map-independent map-dependent f x x-perturbation)
@@ -556,35 +581,6 @@
 	 environment
 	 (+ count 1)
 	 limit))
-       ((il:ternary-expression? expression)
-	(il:eval
-	 (il:make-continuation
-	  (lambda (value1 count continuation)
-	   (il:eval
-	    (il:make-continuation
-	     (lambda (value2 count continuation value1)
-	      (il:eval (il:make-continuation
-			(lambda (value3 count continuation value1 value2)
-			 ((il:ternary-expression-procedure expression)
-			  continuation value1 value2 value3 count limit))
-			continuation
-			value1
-			value2)
-		       (il:ternary-expression-expression3 expression)
-		       environment
-		       count
-		       limit))
-	     continuation
-	     value1)
-	    (il:ternary-expression-expression2 expression)
-	    environment
-	    count
-	    limit))
-	  continuation)
-	 (il:ternary-expression-expression1 expression)
-	 environment
-	 (+ count 1)
-	 limit))
        (else (error #f "Invalid expression: ~s" expression)))))
 
 ;;; Now we have the substrate to implement checkpointing reverse. It should
@@ -739,7 +735,9 @@
    count
    limit))
 
+;;; removed run-time-error
 ;;; removed compile-time-error
+;;; removed internal-error
 
  (define first car)
 
@@ -765,6 +763,7 @@
 
  (define (gensym)
   (set! *index* (+ *index* 1))
+  ;;\needswork: These are interned.
   (string->symbol (string-append "x" (number->string *index*))))
 
  (define (duplicatesq? xs)
@@ -776,6 +775,18 @@
    (cond ((null? l) #f)
 	 ((p (first l)) (first l))
 	 (else (loop (rest l))))))
+
+ (define (unionq x y)
+  (let loop ((l x) (c '()))
+   (cond ((null? l) (append (reverse c) y))
+	 ((memq (first l) y) (loop (rest l) c))
+	 (else (loop (rest l) (cons (first l) c))))))
+
+ (define (set-differenceq x y)
+  (let loop ((l x) (c '()))
+   (cond ((null? l) (reverse c))
+	 ((memq (first l) y) (loop (rest l) c))
+	 (else (loop (rest l) (cons (first l) c))))))
 
  (define (read-source pathname)
   ;; removed default extension
@@ -875,7 +886,6 @@
 	(case (length (second e))
 	 ((0) `(lambda ((cons* ,@(second e)))
 		,(macro-expand-body (rest (rest e)))))
-	 ;;\needswork: macro-expand parameters
 	 ((1) `(lambda ,(second e) ,(macro-expand-body (rest (rest e)))))
 	 (else `(lambda ((cons* ,@(second e)))
 		 ,(macro-expand-body (rest (rest e)))))))
@@ -907,7 +917,6 @@
 	 ((1) `(let ,(second e) ,@(rest (rest e))))
 	 (else `(let (,(first (second e)))
 		 (let* ,(rest (second e)) ,@(rest (rest e)))))))
-       ;;\needswork: if
        ((if)
 	(unless (= (length e) 4)
 	 (error #f "Invalid expression: ~s" e))
@@ -948,11 +957,30 @@
 	      (else `(,(first e) (cons* ,@(rest e)))))))
       e))
 
- (define (parameter-variables p) (error #f "here I am A"))
+ (define (parameter-variables p)
+  (cond ((il:constant-expression? p) '())
+	((il:variable-access-expression? p)
+	 (list (il:variable-access-expression-variable p)))
+	((il:binary-expression? p)
+	 (unionq (free-variables (il:binary-expression-expression1 p))
+		 (free-variables (il:binary-expression-expression2 p))))
+	(else (error #f "Invalid expression: ~s" p))))
 
- (define (create-letrec-expression xs es e) (error #f "here I am B"))
+ (define (create-letrec-expression xs es e) (error #f "here I am A"))
 
- (define (free-variables e) (error #f "here I am C"))
+ (define (free-variables e)
+  (cond ((il:constant-expression? e) '())
+	((il:variable-access-expression? e)
+	 (list (il:variable-access-expression-variable e)))
+	((il:lambda-expression? e)
+	 (set-differenceq (free-variables (il:lambda-expression-expression e))
+			  (free-variables (il:lambda-expression-parameter e))))
+	((il:unary-expression? e)
+	 (free-variables (il:unary-expression-expression e)))
+	((il:binary-expression? e)
+	 (unionq (free-variables (il:binary-expression-expression1 e))
+		 (free-variables (il:binary-expression-expression2 e))))
+	(else (error #f "Invalid expression: ~s" e))))
 
  (define (syntax-check-expression! e)
   (let loop ((e e) (xs (map il:binding-variable *top-level-environment*)))
@@ -1006,7 +1034,6 @@
 	(loop (macro-expand-body (rest (rest e))) (append xs0 xs))))
       ((let) (loop (macro-expand e) xs))
       ((let*) (loop (macro-expand e) xs))
-      ;;\needswork: if
       ((if) (loop (macro-expand e) xs))
       ((cons)
        (unless (= (length e) 3) (error #f "Invalid expression: ~s" e))
@@ -1048,7 +1075,6 @@
        (internalize-expression (macro-expand-body (rest (rest e))))))
      ((let) (internalize-expression (macro-expand e)))
      ((let*) (internalize-expression (macro-expand e)))
-     ;;\needswork: if
      ((if) (internalize-expression (macro-expand e)))
      ((cons) (make-il:binary-expression
 	      (lambda (continuation value1 value2 count limit)
@@ -1138,6 +1164,7 @@
 	(make-unary-primitive 'real? dreal?)
 	(make-unary-primitive 'pair? pair?)
 	(make-unary-primitive 'procedure? il:closure?)
+	(make-ternary-primitive 'if-procedure il:if-procedure)
 	(make-ternary-primitive 'j* il:j*)
 	(make-ternary-primitive '*j il:*j)
 	(make-ternary-primitive 'checkpoint-*j il:checkpoint-*j)))
@@ -1152,5 +1179,5 @@
 	 (let* ((result (concrete->abstract e))
 		(e (first result))
 		(bs (second result)))
-	  (error #f "here I am D"))
+	  (error #f "here I am B"))
 	 (loop (rest es) ds)))))))
