@@ -1,0 +1,68 @@
+#!/bin/bash
+./vlad test1
+./vlad test2
+./vlad test3
+./vlad test4
+./vlad test5
+
+./vlad-I examples/forward examples/forward/factorial
+./vlad-I examples/forward examples/forward/even-odd
+./vlad-I examples/forward examples/forward/bug4
+./vlad-I examples/forward examples/forward/example-forward
+./vlad-I examples/forward examples/forward/prefix
+./vlad-I examples/forward examples/forward/sqrt
+./vlad-I examples/forward examples/forward/triple
+./vlad-I examples/forward examples/forward/hessian
+./vlad-I examples/forward examples/forward/dn
+./vlad-I examples/forward examples/forward/marble
+
+./vlad-I examples/interpreter examples/interpreter/factorial
+./vlad-I examples/interpreter examples/interpreter/even-odd
+./vlad-I examples/interpreter examples/interpreter/bug-a
+./vlad-I examples/interpreter examples/interpreter/bug-b
+./vlad-I examples/interpreter examples/interpreter/bug-c
+./vlad-I examples/interpreter examples/interpreter/bug0
+./vlad-I examples/interpreter examples/interpreter/bug1
+./vlad-I examples/interpreter examples/interpreter/bug2
+./vlad-I examples/interpreter examples/interpreter/bug3
+./vlad-I examples/interpreter examples/interpreter/bug4
+./vlad-I examples/interpreter examples/interpreter/example
+./vlad-I examples/interpreter examples/interpreter/example-forward
+./vlad-I examples/interpreter examples/interpreter/prefix
+./vlad-I examples/interpreter examples/interpreter/sqrt
+./vlad-I examples/interpreter examples/interpreter/triple
+#./vlad-I examples/interpreter examples/interpreter/hessian
+
+./vlad-I examples/ad2008 examples/ad2008/cannon-F
+./vlad-I examples/ad2008 examples/ad2008/cannon-R
+./vlad-I examples/ad2008 examples/ad2008/cannon1000-F
+./vlad-I examples/ad2008 examples/ad2008/cannon1000-R
+
+./vlad-I examples/backprop examples/backprop/backprop-F
+./vlad-I examples/backprop examples/backprop/backprop-R
+
+./vlad-I examples/popl2009-lots-real examples/popl2009-lots-real/series-tail-F
+./vlad-I examples/popl2009-lots-real examples/popl2009-lots-real/series-tail-R
+./vlad-I examples/popl2009-lots-real examples/popl2009-lots-real/nr-sqrt-F
+./vlad-I examples/popl2009-lots-real examples/popl2009-lots-real/nr-sqrt-R
+./vlad-I examples/popl2009-lots-real examples/popl2009-lots-real/series-FF
+./vlad-I examples/popl2009-lots-real examples/popl2009-lots-real/series-FR
+./vlad-I examples/popl2009-lots-real examples/popl2009-lots-real/series-RF
+./vlad-I examples/popl2009-lots-real examples/popl2009-lots-real/series-RR
+./vlad-I examples/popl2009-lots-real examples/popl2009-lots-real/nr-sqrt-FF
+./vlad-I examples/popl2009-lots-real examples/popl2009-lots-real/nr-sqrt-FR
+./vlad-I examples/popl2009-lots-real examples/popl2009-lots-real/nr-sqrt-RF
+./vlad-I examples/popl2009-lots-real examples/popl2009-lots-real/nr-sqrt-RR
+./vlad-I examples/popl2009-lots-real examples/popl2009-lots-real/saddle-FF-stalingrad1000
+./vlad-I examples/popl2009-lots-real examples/popl2009-lots-real/saddle-FR-stalingrad1000
+./vlad-I examples/popl2009-lots-real examples/popl2009-lots-real/saddle-RF-stalingrad1000
+./vlad-I examples/popl2009-lots-real examples/popl2009-lots-real/saddle-RR-stalingrad1000
+./vlad-I examples/popl2009-lots-real examples/popl2009-lots-real/particle-FF-stalingrad1000
+./vlad-I examples/popl2009-lots-real examples/popl2009-lots-real/particle-FR-stalingrad1000
+./vlad-I examples/popl2009-lots-real examples/popl2009-lots-real/particle-RF-stalingrad1000
+./vlad-I examples/popl2009-lots-real examples/popl2009-lots-real/particle-RR-stalingrad1000
+
+./vlad-I examples/probabilistic-programming examples/probabilistic-programming/probabilistic-lambda-calculus-F
+./vlad-I examples/probabilistic-programming examples/probabilistic-programming/probabilistic-lambda-calculus-R
+./vlad-I examples/probabilistic-programming examples/probabilistic-programming/probabilistic-prolog-F
+./vlad-I examples/probabilistic-programming examples/probabilistic-programming/probabilistic-prolog-R
