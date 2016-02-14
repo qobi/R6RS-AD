@@ -168,11 +168,6 @@
 
  (define dlog (lift-real->real log (lambda (x) (d/ x))))
 
- (define dexpt
-  (lift-real*real->real expt
-			(lambda (x1 x2) (d* x2 (dexpt x1 (d- x2 1))))
-			(lambda (x1 x2) (d* (dlog x1) (dexpt x1 x2)))))
-
  (define dsin (lift-real->real sin (lambda (x) (dcos x))))
 
  (define dcos (lift-real->real cos (lambda (x) (d- (dsin x)))))
@@ -233,9 +228,11 @@
 
 ;;;\needswork: We don't provide (co)tangent vector mode.
 ;;;\needswork: We don't provide the ability to choose y-sensitivity after
- ;;             computing y.
+;;;             computing y.
 ;;;\needswork: We don't provide the ability to perform the (co)tangent
 ;;;            computation multiple times after a single primal computation.
+
+ (define-record-type il:constant-expression (fields value))
 
  (define-record-type il:variable-access-expression (fields variable))
 
@@ -515,6 +512,9 @@
   (if (= count limit)
       (make-il:checkpoint continuation expression environment count)
       (cond
+       ((il:constant-expression? expression)
+	(il:call-continuation
+	 continuation (il:constant-expression-value expression) (+ count 1)))
        ((il:variable-access-expression? expression)
 	(il:call-continuation
 	 continuation
@@ -948,21 +948,11 @@
 	      (else `(,(first e) (cons* ,@(rest e)))))))
       e))
 
- (define (new-variable e) (error #f "here I am"))
+ (define (parameter-variables p) (error #f "here I am A"))
 
- (define (new-variable-access-expression e) (error #f "here I am"))
+ (define (create-letrec-expression xs es e) (error #f "here I am B"))
 
- (define (new-constant-expression e) (error #f "here I am"))
-
- (define (new-lambda-expression p e) (error #f "here I am"))
-
- (define (new-application e1 e2) (error #f "here I am"))
-
- (define (parameter-variables p) (error #f "here I am"))
-
- (define (create-letrec-expression xs es e) (error #f "here I am"))
-
- (define (free-variables e) (error #f "here I am"))
+ (define (free-variables e) (error #f "here I am C"))
 
  (define (syntax-check-expression! e)
   (let loop ((e e) (xs (map il:binding-variable *top-level-environment*)))
@@ -970,8 +960,7 @@
     ((boolean? e) (loop `',e xs))
     ((real? e) (loop `',e xs))
     ((concrete-variable? e)
-     (unless (memp eq? (new-variable e) xs)
-      (error #f "Unbound variable: ~s" e))
+     (unless (memq e xs) (error #f "Unbound variable: ~s" e))
      #f)
     ((and (list? e) (not (null? e)))
      (case (first e)
@@ -1004,7 +993,7 @@
 			   (= (length b) 2) (concrete-variable? (first b))))
 		     (second e)))
 	(error #f "Invalid expression: ~s" e))
-       (let ((xs0 (map (lambda (b) (new-variable (first b))) (second e))))
+       (let ((xs0 (map first (second e))))
 	(when (duplicatesq? xs0)
 	 (error #f "Duplicate variables: ~s" e))
 	(for-each
@@ -1019,6 +1008,10 @@
       ((let*) (loop (macro-expand e) xs))
       ;;\needswork: if
       ((if) (loop (macro-expand e) xs))
+      ((cons)
+       (unless (= (length e) 3) (error #f "Invalid expression: ~s" e))
+       (loop (second e) xs)
+       (loop (third e) xs))
       ((cons*) (loop (macro-expand e) xs))
       ((list) (loop (macro-expand e) xs))
       ((cond) (loop (macro-expand e) xs))
@@ -1035,21 +1028,21 @@
   (cond
    ((boolean? e) (internalize-expression `',e))
    ((real? e) (internalize-expression `',e))
-   ((concrete-variable? e) (new-variable-access-expression (new-variable e)))
+   ((concrete-variable? e) (make-il:variable-access-expression e))
    ((and (list? e) (not (null? e)))
     (case (first e)
-     ((quote) (new-constant-expression (second e)))
+     ((quote) (make-il:constant-expression (second e)))
      ((lambda)
       (case (length (second e))
        ((0) (internalize-expression (macro-expand e)))
-       ((1) (new-lambda-expression
+       ((1) (make-il:lambda-expression
 	     (internalize-expression (first (second e)))
 	     (internalize-expression (macro-expand-body (rest (rest e))))))
        (else (internalize-expression (macro-expand e)))))
      ((letrec)
       ;;\needswork: letrec
       (create-letrec-expression
-       (map (lambda (b) (new-variable (first b))) (second e))
+       (map first (second e))
        (map (lambda (b) (internalize-expression (macro-expand (second b))))
 	    (second e))
        (internalize-expression (macro-expand-body (rest (rest e))))))
@@ -1057,6 +1050,11 @@
      ((let*) (internalize-expression (macro-expand e)))
      ;;\needswork: if
      ((if) (internalize-expression (macro-expand e)))
+     ((cons) (make-il:binary-expression
+	      (lambda (continuation value1 value2 count limit)
+	       (il:call-continuation (cons value1 value2) count))
+	      (internalize-expression (second e))
+	      (internalize-expression (third e))))
      ((cons*) (internalize-expression (macro-expand e)))
      ((list) (internalize-expression (macro-expand e)))
      ((cond) (internalize-expression (macro-expand e)))
@@ -1064,8 +1062,10 @@
      ((or) (internalize-expression (macro-expand e)))
      (else (case (length (rest e))
 	    ((0) (internalize-expression (macro-expand e)))
-	    ((1) (new-application (internalize-expression (first e))
-				  (internalize-expression (second e))))
+	    ((1) (make-il:binary-expression
+		  il:apply
+		  (internalize-expression (first e))
+		  (internalize-expression (second e))))
 	    (else (internalize-expression (macro-expand e)))))))
    (else (error #f "Can't internalize: ~s" e))))
 
@@ -1115,35 +1115,20 @@
     '())))
 
  (define *top-level-environment*
-  (list (make-unary-primitive 'car car)
-	(make-unary-primitive 'cdr cdr)
-	;; Unlike Stalingrad, cons is a procedure.
-	(make-binary-primitive 'cons cons)
-	;;\needswork: make varargs
-	(make-binary-primitive '+ d+)
-	;;\needswork: make varargs
+  (list (make-binary-primitive '+ d+)
 	(make-binary-primitive '- d-)
-	;;\needswork: make varargs
 	(make-binary-primitive '* d*)
-	;;\needswork: make varargs
 	(make-binary-primitive '/ d/)
 	(make-unary-primitive 'sqrt dsqrt)
 	(make-unary-primitive 'exp dexp)
 	(make-unary-primitive 'log dlog)
-	;;\needswork: expt
 	(make-unary-primitive 'sin dsin)
 	(make-unary-primitive 'cos dcos)
-	;;\needswork: make varargs
 	(make-binary-primitive 'atan datan)
-	;;\needswork: make varargs
 	(make-binary-primitive '= d=)
-	;;\needswork: make varargs
 	(make-binary-primitive '< d<)
-	;;\needswork: make varargs
 	(make-binary-primitive '> d>)
-	;;\needswork: make varargs
 	(make-binary-primitive '<= d<=)
-	;;\needswork: make varargs
 	(make-binary-primitive '>= d>=)
 	(make-unary-primitive 'zero? dzero?)
 	(make-unary-primitive 'positive? dpositive?)
@@ -1167,5 +1152,5 @@
 	 (let* ((result (concrete->abstract e))
 		(e (first result))
 		(bs (second result)))
-	  (error #f "here I am"))
+	  (error #f "here I am D"))
 	 (loop (rest es) ds)))))))
