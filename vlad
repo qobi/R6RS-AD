@@ -4,7 +4,7 @@
 
 ;;;\needswork: get command-line argument
 
-(vlad "test1.vlad")
+(vlad "test2.vlad")
 
 ;;; Local Variables:
 ;;; eval: (scheme-mode)

@@ -262,7 +262,7 @@
  (define-record-type il:nonrecursive-closure (fields expression environment))
 
  (define-record-type il:recursive-closure
-  (fields values variables expressions index))
+  (fields variables expressions index environment))
 
  (define-record-type il:continuation (fields procedure values))
 
@@ -296,10 +296,11 @@
 	  (il:nonrecursive-closure-expression x)
 	  (il:walk1 f (il:nonrecursive-closure-environment x))))
 	((il:recursive-closure? x)
-	 (make-il:recursive-closure (il:walk1 f (il:recursive-closure-values x))
-				    (il:recursive-closure-variables x)
-				    (il:recursive-closure-expressions x)
-				    (il:recursive-closure-index x)))
+	 (make-il:recursive-closure
+	  (il:recursive-closure-variables x)
+	  (il:recursive-closure-expressions x)
+	  (il:recursive-closure-index x)
+	  (il:walk1 f (il:recursive-closure-environment x))))
 	((il:continuation? x)
 	 (make-il:continuation (il:continuation-procedure x)
 			       (il:walk1 f (il:continuation-values x))))
@@ -340,12 +341,13 @@
 		 (il:recursive-closure-expressions x-prime))
 	 (= (il:recursive-closure-index x)
 	    (il:recursive-closure-index x-prime)))
-    (make-il:recursive-closure (il:walk2 f
-					 (il:recursive-closure-values x)
-					 (il:recursive-closure-values x-prime))
-			       (il:recursive-closure-variables x)
-			       (il:recursive-closure-expressions x)
-			       (il:recursive-closure-index x)))
+    (make-il:recursive-closure
+     (il:recursive-closure-variables x)
+     (il:recursive-closure-expressions x)
+     (il:recursive-closure-index x)
+     (il:walk2 f
+	       (il:recursive-closure-environment x)
+	       (il:recursive-closure-environment x-prime))))
    ((and (il:continuation? x)
 	 (il:continuation? x-prime)
 	 (eq? (il:continuation-procedure x)
@@ -376,7 +378,8 @@
 	((il:binding? x) (il:walk1! f (il:binding-value x)))
 	((il:nonrecursive-closure? x)
 	 (il:walk1! f (il:nonrecursive-closure-environment x)))
-	((il:recursive-closure? x) (il:walk1 f (il:recursive-closure-values x)))
+	((il:recursive-closure? x)
+	 (il:walk1 f (il:recursive-closure-environment x)))
 	((il:continuation? x) (il:walk1! f (il:continuation-values x)))
 	((il:checkpoint? x)
 	 (il:walk1! f (il:checkpoint-continuation x))
@@ -411,8 +414,8 @@
 	 (= (il:recursive-closure-index x)
 	    (il:recursive-closure-index x-prime)))
     (il:walk2 f
-	      (il:recursive-closure-values x)
-	      (il:recursive-closure-values x-prime)))
+	      (il:recursive-closure-environment x)
+	      (il:recursive-closure-environment x-prime)))
    ((and (il:continuation? x)
 	 (il:continuation? x-prime)
 	 (eq? (il:continuation-procedure x)
@@ -459,18 +462,41 @@
 	(else (internal-error))))
 
  (define (il:apply continuation value1 value2 count limit)
-  (if (il:nonrecursive-closure? value1)
-      (il:eval continuation
-	       (il:lambda-expression-expression
-		(il:nonrecursive-closure-expression value1))
-	       (cons (il:destructure
+  (cond
+   ((il:nonrecursive-closure? value1)
+    (il:eval continuation
+	     (il:lambda-expression-expression
+	      (il:nonrecursive-closure-expression value1))
+	     ;;\needswork: Not safe for space.
+	     (append (il:destructure
 		      (il:lambda-expression-parameter
 		       (il:nonrecursive-closure-expression value1))
 		      value2)
 		     (il:nonrecursive-closure-environment value1))
-	       count
-	       limit)
-      (run-time-error "Not a closure: ~s" value1)))
+	     count
+	     limit))
+   ((il:recursive-closure? value1)
+    (il:eval continuation
+	     (il:lambda-expression-expression
+	      (list-ref (il:recursive-closure-expressions value1)
+			(il:recursive-closure-index value1)))
+	     ;;\needswork: Not safe for space.
+	     (append (il:destructure
+		      (il:lambda-expression-parameter
+		       (list-ref (il:recursive-closure-expressions value1)
+				 (il:recursive-closure-index value1)))
+		      value2)
+		     (map-indexed (lambda (variable index)
+				   (make-il:recursive-closure
+				    (il:recursive-closure-variables value1)
+				    (il:recursive-closure-expressions value1)
+				    index
+				    (il:recursive-closure-environment value1)))
+				  (il:recursive-closure-variables value1))
+		     (il:recursive-closure-environment value1))
+	     count
+	     limit))
+   (else (run-time-error "Not a closure: ~s" value1))))
 
  (define (il:if-procedure continuation value1 value2 value3 count limit)
   (il:call-continuation continuation (if value1 value2 value3) count))
@@ -599,6 +625,7 @@
        ((il:lambda-expression? expression)
 	(il:call-continuation
 	 continuation
+	 ;;\needswork: Not safe for space.
 	 (make-il:nonrecursive-closure expression environment)
 	 (+ count 1)))
        ((il:unary-expression? expression)
@@ -661,7 +688,21 @@
 	 environment
 	 (+ count 1)
 	 limit))
-       ((il:letrec-expression? expression) (error #f "here I am"))
+       ((il:letrec-expression? expression)
+	(il:eval continuation
+		 (il:letrec-expression-expression expression)
+		 ;;\needswork: Not safe for space.
+		 (append
+		  (map-indexed (lambda (variable index)
+				(make-il:recursive-closure
+				 (il:letrec-expression-variables expression)
+				 (il:letrec-expression-expressions expression)
+				 index
+				 environment))
+			       (il:letrec-expression-variables expression))
+		  environment)
+		 (+ count 1)
+		 limit))
        (else (internal-error)))))
 
 ;;; Now we have the substrate to implement checkpointing reverse. It should
@@ -876,6 +917,12 @@
 	     f
 	     (cdr l)
 	     (map cdr ls))))
+
+ (define (map-indexed f l)
+  (let loop ((i 0) (l l) (c '()))
+   (if (null? l)
+       (reverse c)
+       (loop (+ i 1) (rest l) (cons (f (first l) i) c)))))
 
  (define (internal-error) (error #f "Internal error"))
 
@@ -1161,7 +1208,7 @@
  (define (new-cons-expression e1 e2)
   (make-il:binary-expression
    (lambda (continuation value1 value2 count limit)
-    (il:call-continuation (cons value1 value2) count))
+    (il:call-continuation continuation (cons value1 value2) count))
    e1
    e2))
 
@@ -1222,7 +1269,7 @@
      (make-il:variable-access-expression 'x)
      (make-il:unary-expression
       (lambda (continuation value count limit)
-       (il:call-continuation (f value) count))
+       (il:call-continuation continuation (f value) count))
       (make-il:variable-access-expression 'x)))
     '())))
 
@@ -1236,7 +1283,7 @@
 			  (make-il:variable-access-expression 'x2))
      (make-il:binary-expression
       (lambda (continuation value1 value2 count limit)
-       (il:call-continuation (f value1 value2) count))
+       (il:call-continuation continuation (f value1 value2) count))
       (make-il:variable-access-expression 'x1)
       (make-il:variable-access-expression 'x2)))
     '())))
@@ -1253,7 +1300,7 @@
 			   (make-il:variable-access-expression 'x3)))
      (make-il:ternary-expression
       (lambda (continuation value1 value2 value3 count limit)
-       (il:call-continuation (f value1 value2 value3) count))
+       (il:call-continuation continuation (f value1 value2 value3) count))
       (make-il:variable-access-expression 'x1)
       (make-il:variable-access-expression 'x2)
       (make-il:variable-access-expression 'x3)))
@@ -1298,5 +1345,12 @@
 	 (let* ((result (concrete->abstract e))
 		(e (first result))
 		(bs (second result)))
-	  (error #f "here I am"))
-	 (loop (rest es) ds)))))))
+	  (il:eval (il:make-continuation
+		    (lambda (value count)
+		     (write value)
+		     (newline)
+		     (loop (rest es) ds)))
+		   e
+		   bs
+		   0
+		   (/ 1.0 0.0)))))))))
