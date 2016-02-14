@@ -2,7 +2,7 @@
 
 (library
  (vlad)
- (export vlad)
+ (export vlad vlad-I)
  (import (rnrs) (rnrs r5rs (6)))
 
  (define *e* 0)
@@ -504,6 +504,10 @@
  (define (il:if-procedure continuation value1 value2 value3 count limit)
   (il:call-continuation continuation (if value1 value2 value3) count))
 
+ (define (il:real value) value)
+
+ (define (il:write-real value) (write (primal* value)) (newline) value)
+
  (define (forward-mode
 	  continuation map-independent map-dependent f x x-perturbation)
   (set! *e* (+ *e* 1))
@@ -950,20 +954,17 @@
       pathname
       (string-append pathname "." extension)))
 
- ;;\needswork: place holder for now
- (define (can-open-file-for-input? pathname) #t)
-
  (define *include-path* '())
 
  (define (search-include-path-without-extension pathname)
-  (cond ((can-open-file-for-input? pathname) pathname)
+  (cond ((file-exists? pathname) pathname)
 	((and (>= (string-length pathname) 1)
 	      (char=? (string-ref pathname 0) #\/))
 	 (compile-time-error "Cannot find: ~a" pathname))
 	(else (let loop ((include-path *include-path*))
 	       (cond ((null? include-path)
 		      (compile-time-error "Cannot find: ~a" pathname))
-		     ((can-open-file-for-input?
+		     ((file-exists?
 		       (string-append (first include-path) "/" pathname))
 		      (string-append (first include-path) "/" pathname))
 		     (else (loop (rest include-path))))))))
@@ -973,7 +974,7 @@
 
  (define (read-source pathname)
   (let ((pathname (default-extension pathname "vlad")))
-   (unless (can-open-file-for-input? pathname)
+   (unless (file-exists? pathname)
     (compile-time-error "Cannot find: ~a" pathname))
    (call-with-input-file pathname
     (lambda (input-port)
@@ -1378,11 +1379,34 @@
 	(make-unary-primitive 'pair? pair?)
 	(make-unary-primitive 'procedure? il:closure?)
 	(make-ternary-primitive 'if-procedure il:if-procedure)
+	(make-unary-primitive 'real il:real)
+	(make-unary-primitive 'write-real il:write-real)
 	(make-ternary-primitive 'j* il:j*)
 	(make-ternary-primitive '*j il:*j)
 	(make-ternary-primitive 'checkpoint-*j il:checkpoint-*j)))
 
  (define (vlad pathname)
+  (let loop ((es (read-source pathname)) (ds '()))
+   (unless (null? es)
+    (if (definition? (first es))
+	(loop (rest es) (cons (first es) ds))
+	(let ((e (expand-definitions (reverse ds) (first es))))
+	 (syntax-check-expression! e)
+	 (let* ((result (concrete->abstract e))
+		(e (first result))
+		(bs (second result)))
+	  (il:eval (il:make-continuation
+		    (lambda (value count)
+		     (write value)
+		     (newline)
+		     (loop (rest es) ds)))
+		   e
+		   bs
+		   0
+		   (/ 1.0 0.0))))))))
+
+ (define (vlad-I include-directory pathname)
+  (set! *include-path* (list include-directory))
   (let loop ((es (read-source pathname)) (ds '()))
    (unless (null? es)
     (if (definition? (first es))
