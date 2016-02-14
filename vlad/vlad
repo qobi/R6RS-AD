@@ -1,0 +1,12 @@
+#!/usr/bin/env scheme-script
+
+(import (rnrs) (vlad))
+
+(unless (= (length (command-line)) 2)
+ (error #f "usage: vlad <pathname>"))
+
+(vlad (cadr (command-line)))
+
+;;; Local Variables:
+;;; eval: (scheme-mode)
+;;; End:
