@@ -1,0 +1,13 @@
+(include "math")
+
+(define ((jacobian-using-j* f) x)
+ (let ((n (length x))) (map-n (lambda (i) (cadr (j* f x (e i n)))) n)))
+
+(define (prefix l)
+ (letrec ((loop (lambda (a l)
+		 (if (null? l)
+		     '()
+		     (let ((a (+ a (first l)))) (cons a (loop a (rest l))))))))
+  (loop 0 l)))
+
+((jacobian-using-j* prefix) '(0 1 2 3 4))

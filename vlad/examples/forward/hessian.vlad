@@ -1,0 +1,34 @@
+(include "math")
+
+(define ((partial-derivative-using-j* f i) x) (cadr (j* f x (e i (length x)))))
+
+(define (partial-derivative f i) (partial-derivative-using-j* f i))
+
+(define ((hessian-using-j*-j* f) x)
+ (let ((n (length x)))
+  (map-n (lambda (i)
+	  (map-n (lambda (j)
+		  ((partial-derivative-using-j*
+		    (partial-derivative-using-j* f i) j)
+		   x))
+		 n))
+	 n)))
+
+(define (hessian f) (hessian-using-j*-j* f))
+
+(define (hessian-quadratic-form-using-j*-j* f x u v)
+ (cadr (j* (lambda (x) (cadr (j* f x v))) x u)))
+
+(define (hessian-quadratic-form f x v)
+ (hessian-quadratic-form-using-j*-j* f x v))
+
+(define (alternate-hessian-quadratic-form f x u v)
+ (dot u (m*v ((hessian f) x) v)))
+
+(define (f (list x y)) (+ (* 2 (sqr x)) (+ (* 3 (* x y)) (* 4 (sqr y)))))
+
+((hessian-using-j*-j* f) '(3 4))
+
+(alternate-hessian-quadratic-form f '(3 4) '(7 8) '(9 10))
+
+(hessian-quadratic-form-using-j*-j* f '(3 4) '(7 8) '(9 10))
