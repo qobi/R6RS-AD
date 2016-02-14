@@ -251,6 +251,9 @@
  (define-record-type il:binary-expression
   (fields procedure expression1 expression2))
 
+ (define-record-type il:letrec-expression
+  (fields variables expressions expression))
+
  (define-record-type il:binding (fields variable value))
 
  (define-record-type il:closure (fields expression environment))
@@ -268,7 +271,7 @@
 ;;; procedure.
 
  (define (il:lookup variable environment)
-  (cond ((null? environment) (error #f "Unbound variable: ~s" variable))
+  (cond ((null? environment) (internal-error))
 	((eq? variable (il:binding-variable (first environment)))
 	 (il:binding-value (first environment)))
 	(else (il:lookup variable (rest environment)))))
@@ -293,7 +296,7 @@
 			     (il:checkpoint-expression x)
 			     (il:walk1 f (il:checkpoint-environment x))
 			     (il:checkpoint-count x)))
-	(else (error #f "Can't walk1: ~s" x))))
+	(else (internal-error))))
 
  (define (il:walk2 f x x-prime)
   (cond
@@ -335,7 +338,7 @@
 				  (il:checkpoint-environment x)
 				  (il:checkpoint-environment x-prime))
 			(il:checkpoint-count x)))
-   (else (error #f "Can't walk2: ~s ~s" x x-prime))))
+   (else (run-time-error "Values don't conform: ~s ~s" x x-prime))))
 
  (define (il:walk1! f x)
   (cond ((eq? x #t) #f)
@@ -349,7 +352,7 @@
 	((il:checkpoint? x)
 	 (il:walk1! f (il:checkpoint-continuation x))
 	 (il:walk1! f (il:checkpoint-environment x)))
-	(else (error #f "Can't walk1!: ~s" x))))
+	(else (internal-error))))
 
  (define (il:walk2! f x x-prime)
   (cond
@@ -381,7 +384,7 @@
      f (il:checkpoint-continuation x) (il:checkpoint-continuation x-prime))
     (il:walk2!
      f (il:checkpoint-environment x) (il:checkpoint-environment x-prime)))
-   (else (error #f "Can't walk2!: ~s ~s" x x-prime))))
+   (else (run-time-error "Values don't conform: ~s ~s" x x-prime))))
 
  (define (il:make-continuation procedure . values)
   (make-il:continuation procedure values))
@@ -393,11 +396,12 @@
 	 (il:continuation-values continuation)))
 
  (define (il:destructure parameter value)
+  ;; removed lambda and letrec parameters
   (cond ((il:constant-expression? parameter)
 	 (unless (equal? (il:constant-expression-value parameter) value)
-	  (error #f "Argument is not an equivalent value for ~s: ~s"
-		 (il:constant-expression-value parameter)
-		 value))
+	  (run-time-error "Argument is not an equivalent value for ~s: ~s"
+			  (il:constant-expression-value parameter)
+			  value))
 	 '())
 	((il:variable-access-expression? parameter)
 	 (list (make-il:binding
@@ -407,7 +411,7 @@
 		  (il:binary-expression-expression1 parameter) (car value))
 		 (il:destructure
 		  (il:binary-expression-expression2 parameter) (cdr value))))
-	(else (error #f "Invalid expression: ~s" parameter))))
+	(else (internal-error))))
 
  (define (il:apply continuation value1 value2 count limit)
   (if (il:closure? value1)
@@ -420,7 +424,7 @@
 	     (il:closure-environment value1))
        count
        limit)
-      (error #f "Not a closure: ~s" value1)))
+      (run-time-error "Not a closure: ~s" value1)))
 
  (define (il:if-procedure continuation value1 value2 value3 count limit)
   (il:call-continuation continuation (if value1 value2 value3) count))
@@ -581,7 +585,8 @@
 	 environment
 	 (+ count 1)
 	 limit))
-       (else (error #f "Invalid expression: ~s" expression)))))
+       ((il:letrec-expression? expression) (error #f "here I am"))
+       (else (internal-error)))))
 
 ;;; Now we have the substrate to implement checkpointing reverse. It should
 ;;; have the same interface as il:*j.
@@ -634,12 +639,12 @@
 		   ;; c is (first value7)
 		   ;; x` is (second value7)
 		   (unless (equal? value4 (first value6))
-		    (error #f "(not (equal? value4 (first value6)))"))
+		    (internal-error "(not (equal? value4 (first value6)))"))
 		   (il:checkpoint-*j
 		    (il:make-continuation
 		     (lambda (value7 count7 continuation value6)
 		      (unless (= count7 (+ count (quotient (- count4 count) 2)))
-		       (error #f "(not (= count7 (+ count (quotient (- count4 count) 2))))"))
+		       (internal-error "(not (= count7 (+ count (quotient (- count4 count) 2))))"))
 		      ;; We can't check that (equal? checkpoint5 (first value7))
 		      ;; because we can't close over checkpoint5.
 		      (il:call-continuation
@@ -657,10 +662,10 @@
 		      (make-il:binary-expression
 		       (lambda (continuation8 value8 value9 count8 limit8)
 			(unless (= count8 count)
-			 (error #f "(not (= count8 count))"))
+			 (internal-error "(not (= count8 count))"))
 			(unless (= limit8
 				   (+ count (quotient (- count4 count) 2)))
-			 (error #f "(not (= limit8 (+ count (quotient (- count4 count) 2))))"))
+			 (internal-error "(not (= limit8 (+ count (quotient (- count4 count) 2))))"))
 			(il:apply continuation8 value8 value9 count8 limit8))
 		       (make-il:variable-access-expression 'f)
 		       (make-il:variable-access-expression 'x)))
@@ -706,12 +711,14 @@
 	       ;; is analogous to fail never returning.
 	       ;;\needswork: Could eliminate (il:checkpoint-count value10).
 	       (unless (= count10 (il:checkpoint-count value10))
-		(error #f "(not (= count10 (il:checkpoint-count value10)))"))
+		(internal-error
+		 "(not (= count10 (il:checkpoint-count value10)))"))
 	       (unless (= count10 (+ count (quotient (- count4 count) 2)))
 		(error
 		 #f
 		 "(not (= count10 (+ count (quotient (- count4 count) 2))))"))
-	       (unless (= limit10 limit) (error #f "(not (= limit10 limit))"))
+	       (unless (= limit10 limit)
+		(internal-error "(not (= limit10 limit))"))
 	       (il:eval (il:checkpoint-continuation value10)
 			(il:checkpoint-expression value10)
 			(il:checkpoint-environment value10)
@@ -734,10 +741,6 @@
    value2
    count
    limit))
-
-;;; removed run-time-error
-;;; removed compile-time-error
-;;; removed internal-error
 
  (define first car)
 
@@ -788,6 +791,24 @@
 	 ((memq (first l) y) (loop (rest l) c))
 	 (else (loop (rest l) (cons (first l) c))))))
 
+ (define (map-reduce g i f l . ls)
+  (if (null? l)
+      i
+      (apply map-reduce
+	     g
+	     (g i (apply f (car l) (map car ls)))
+	     f
+	     (cdr l)
+	     (map cdr ls))))
+
+ (define (internal-error) (error #f "Internal error"))
+
+ (define (compile-time-error message . arguments)
+  (apply error #f message arguments))
+
+ (define (run-time-error message . arguments)
+  (apply error #f message arguments))
+
  (define (read-source pathname)
   ;; removed default extension
   ;; removed include
@@ -798,6 +819,7 @@
       (if (eof-object? e) (reverse es) (loop (cons e es))))))))
 
  (define (concrete-variable? x)
+  ;; removed alpha anf backpropagator perturbation forward sensitivity reverse
   (and (symbol? x)
        (not (memq x '(quote
 		      lambda
@@ -833,9 +855,10 @@
       (definens-expression (first e) (list `(lambda ,(rest e) ,@es)))))
 
  (define (expand-definitions ds e)
-  (for-each (lambda (d)
-	     (unless (definition? d) (error #f "Invalid definition: ~s" d)))
-	    ds)
+  (for-each
+   (lambda (d)
+    (unless (definition? d) (compile-time-error "Invalid definition: ~s" d)))
+   ds)
   (if (null? ds)
       e
       `(letrec ,(map (lambda (d)
@@ -851,24 +874,26 @@
       (and (pair? v) (value? (car v)) (value? (cdr v)))))
 
  (define (syntax-check-parameter! p)
-  (cond ((boolean? p) (syntax-check-parameter! `',p))
-	((real? p) (syntax-check-parameter! `',p))
-	((concrete-variable? p)
-	 (unless (concrete-variable? p) (error #f "Invalid parameter: ~s" p))
-	 #f)
-	((and (list? p) (not (null? p)))
-	 (case (first p)
-	  ((quote) (unless (and (= (length p) 2) (value? (second p)))
-		    (error #f "Invalid parameter: ~s" p))
-	   #f)
-	  ((cons)
-	   (unless (= (length p) 3) (error #f "Invalid parameter: ~s" p))
-	   (syntax-check-parameter! (second p))
-	   (syntax-check-parameter! (third p)))
-	  ((cons*) (syntax-check-parameter! (macro-expand p)))
-	  ((list) (syntax-check-parameter! (macro-expand p)))
-	  (else (error #f "Invalid parameter: ~s" p))))
-	(else (error #f "Invalid parameter: ~s" p))))
+  (cond
+   ((boolean? p) (syntax-check-parameter! `',p))
+   ((real? p) (syntax-check-parameter! `',p))
+   ((concrete-variable? p)
+    (unless (concrete-variable? p)
+     (compile-time-error "Invalid parameter: ~s" p))
+    #f)
+   ((and (list? p) (not (null? p)))
+    (case (first p)
+     ((quote) (unless (and (= (length p) 2) (value? (second p)))
+	       (compile-time-error "Invalid parameter: ~s" p))
+      #f)
+     ((cons)
+      (unless (= (length p) 3) (compile-time-error "Invalid parameter: ~s" p))
+      (syntax-check-parameter! (second p))
+      (syntax-check-parameter! (third p)))
+     ((cons*) (syntax-check-parameter! (macro-expand p)))
+     ((list) (syntax-check-parameter! (macro-expand p)))
+     (else (compile-time-error "Invalid parameter: ~s" p))))
+   (else (compile-time-error "Invalid parameter: ~s" p))))
 
  (define (valid-body? es)
   (and (not (null? es)) (every definition? (but-last es))))
@@ -882,7 +907,7 @@
 	(unless (and (>= (length e) 3)
 		     (list? (second e))
 		     (valid-body? (rest (rest e))))
-	 (error #f "Invalid expression: ~s" e))
+	 (compile-time-error "Invalid expression: ~s" e))
 	(case (length (second e))
 	 ((0) `(lambda ((cons* ,@(second e)))
 		,(macro-expand-body (rest (rest e)))))
@@ -904,14 +929,14 @@
 				(lambda ,(map first (third e))
 				 ,@(rest (rest (rest e))))))
 		       (,(second e) ,@(map second (third e)))))
-		    (else (error #f "Invalid expression: ~s" e))))
+		    (else (compile-time-error "Invalid expression: ~s" e))))
        ((let*)
 	(unless (and (>= (length e) 3)
 		     (list? (second e))
 		     (every (lambda (b) (and (list? b) (= (length b) 2)))
 			    (second e))
 		     (valid-body? (rest (rest e))))
-	 (error #f "Invalid expression: ~s" e))
+	 (compile-time-error "Invalid expression: ~s" e))
 	(case (length (second e))
 	 ((0) (macro-expand-body (rest (rest e))))
 	 ((1) `(let ,(second e) ,@(rest (rest e))))
@@ -919,7 +944,7 @@
 		 (let* ,(rest (second e)) ,@(rest (rest e)))))))
        ((if)
 	(unless (= (length e) 4)
-	 (error #f "Invalid expression: ~s" e))
+	 (compile-time-error "Invalid expression: ~s" e))
 	;; needs work: To ensure that you don't shadow if-procedure.
 	`(if-procedure
 	  ,(second e) (lambda () ,(third e)) (lambda () ,(fourth e))))
@@ -935,7 +960,7 @@
 		     (every (lambda (b) (and (list? b) (= (length b) 2)))
 			    (rest e))
 		     (eq? (first (last e)) 'else))
-	 (error #f "Invalid expression: ~s" e))
+	 (compile-time-error "Invalid expression: ~s" e))
 	(if (null? (rest (rest e)))
 	    (second (second e))
 	    `(if ,(first (second e))
@@ -958,15 +983,14 @@
       e))
 
  (define (parameter-variables p)
+  ;; removed lambda and letrec parameters
   (cond ((il:constant-expression? p) '())
 	((il:variable-access-expression? p)
 	 (list (il:variable-access-expression-variable p)))
 	((il:binary-expression? p)
 	 (unionq (free-variables (il:binary-expression-expression1 p))
 		 (free-variables (il:binary-expression-expression2 p))))
-	(else (error #f "Invalid expression: ~s" p))))
-
- (define (create-letrec-expression xs es e) (error #f "here I am A"))
+	(else (internal-error))))
 
  (define (free-variables e)
   (cond ((il:constant-expression? e) '())
@@ -980,7 +1004,15 @@
 	((il:binary-expression? e)
 	 (unionq (free-variables (il:binary-expression-expression1 e))
 		 (free-variables (il:binary-expression-expression2 e))))
-	(else (error #f "Invalid expression: ~s" e))))
+	((il:letrec-expression? e)
+	 (set-differenceq
+	  (unionq (free-variables (il:letrec-expression-expression e))
+		  (map-reduce unionq
+			      '()
+			      free-variables
+			      (il:letrec-expression-expressions e)))
+	  (il:letrec-expression-variables e)))
+	(else (internal-error))))
 
  (define (syntax-check-expression! e)
   (let loop ((e e) (xs (map il:binding-variable *top-level-environment*)))
@@ -988,19 +1020,19 @@
     ((boolean? e) (loop `',e xs))
     ((real? e) (loop `',e xs))
     ((concrete-variable? e)
-     (unless (memq e xs) (error #f "Unbound variable: ~s" e))
+     (unless (memq e xs) (compile-time-error "Unbound variable: ~s" e))
      #f)
     ((and (list? e) (not (null? e)))
      (case (first e)
       ((quote)
        (unless (and (= (length e) 2) (value? (second e)))
-	(error #f "Invalid expression: ~s" e))
+	(compile-time-error "Invalid expression: ~s" e))
        #f)
       ((lambda)
        (unless (and (>= (length e) 3)
 		    (list? (second e))
 		    (valid-body? (rest (rest e))))
-	(error #f "Invalid expression: ~s" e))
+	(compile-time-error "Invalid expression: ~s" e))
        (case (length (second e))
 	((0) (loop (macro-expand e) xs))
 	((1)
@@ -1008,10 +1040,9 @@
 	 (let ((xs0 (parameter-variables
 		     (internalize-expression (first (second e))))))
 	  (when (duplicatesq? xs0)
-	   (error #f "Duplicate variables: ~s" e))
+	   (compile-time-error "Duplicate variables: ~s" e))
 	  (loop (macro-expand-body (rest (rest e))) (append xs0 xs))))
 	(else (loop (macro-expand e) xs))))
-      ;;\needswork: letrec
       ((letrec)
        (unless (and (>= (length e) 3)
 		    (list? (second e))
@@ -1020,15 +1051,15 @@
 		      (and (list? b)
 			   (= (length b) 2) (concrete-variable? (first b))))
 		     (second e)))
-	(error #f "Invalid expression: ~s" e))
+	(compile-time-error "Invalid expression: ~s" e))
        (let ((xs0 (map first (second e))))
 	(when (duplicatesq? xs0)
-	 (error #f "Duplicate variables: ~s" e))
+	 (compile-time-error "Duplicate variables: ~s" e))
 	(for-each
 	 (lambda (b)
 	  (let ((e1 (macro-expand (second b))))
 	   (unless (and (list? e1) (= (length e1) 3) (eq? (first e1) 'lambda))
-	    (error #f "Invalid expression: ~s" e))
+	    (compile-time-error "Invalid expression: ~s" e))
 	   (loop e1 (append xs0 xs))))
 	 (second e))
 	(loop (macro-expand-body (rest (rest e))) (append xs0 xs))))
@@ -1036,7 +1067,7 @@
       ((let*) (loop (macro-expand e) xs))
       ((if) (loop (macro-expand e) xs))
       ((cons)
-       (unless (= (length e) 3) (error #f "Invalid expression: ~s" e))
+       (unless (= (length e) 3) (compile-time-error "Invalid expression: ~s" e))
        (loop (second e) xs)
        (loop (third e) xs))
       ((cons*) (loop (macro-expand e) xs))
@@ -1049,7 +1080,7 @@
 	     ((1) (loop (first e) xs)
 	      (loop (second e) xs))
 	     (else (loop (macro-expand e) xs))))))
-    (else (error #f "Invalid expression: ~s" e)))))
+    (else (compile-time-error "Invalid expression: ~s" e)))))
 
  (define (internalize-expression e)
   (cond
@@ -1067,8 +1098,7 @@
 	     (internalize-expression (macro-expand-body (rest (rest e))))))
        (else (internalize-expression (macro-expand e)))))
      ((letrec)
-      ;;\needswork: letrec
-      (create-letrec-expression
+      (make-il:letrec-expression
        (map first (second e))
        (map (lambda (b) (internalize-expression (macro-expand (second b))))
 	    (second e))
@@ -1093,7 +1123,7 @@
 		  (internalize-expression (first e))
 		  (internalize-expression (second e))))
 	    (else (internalize-expression (macro-expand e)))))))
-   (else (error #f "Can't internalize: ~s" e))))
+   (else (internal-error))))
 
  (define (concrete->abstract e)
   (let ((e (internalize-expression e)))
@@ -1179,5 +1209,5 @@
 	 (let* ((result (concrete->abstract e))
 		(e (first result))
 		(bs (second result)))
-	  (error #f "here I am B"))
+	  (error #f "here I am"))
 	 (loop (rest es) ds)))))))
