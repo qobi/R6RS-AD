@@ -251,6 +251,9 @@
  (define-record-type il:binary-expression
   (fields procedure expression1 expression2))
 
+ (define-record-type il:ternary-expression
+  (fields procedure expression1 expression2 expression3))
+
  (define-record-type il:letrec-expression
   (fields variables expressions expression))
 
@@ -585,6 +588,35 @@
 	 environment
 	 (+ count 1)
 	 limit))
+       ((il:ternary-expression? expression)
+	(il:eval
+	 (il:make-continuation
+	  (lambda (value1 count continuation)
+	   (il:eval
+	    (il:make-continuation
+	     (lambda (value2 count continuation value1)
+	      (il:eval (il:make-continuation
+			(lambda (value3 count continuation value1 value2)
+			 ((il:ternary-expression-procedure expression)
+			  continuation value1 value2 value3 count limit))
+			continuation
+			value1
+			value2)
+		       (il:ternary-expression-expression3 expression)
+		       environment
+		       count
+		       limit))
+	     continuation
+	     value1)
+	    (il:ternary-expression-expression2 expression)
+	    environment
+	    count
+	    limit))
+	  continuation)
+	 (il:ternary-expression-expression1 expression)
+	 environment
+	 (+ count 1)
+	 limit))
        ((il:letrec-expression? expression) (error #f "here I am"))
        (else (internal-error)))))
 
@@ -658,7 +690,7 @@
 		    ;; This is a closure that behaves like \x.checkpoint(f,x,n).
 		    (make-il:closure
 		     (make-il:lambda-expression
-		      'x
+		      (make-il:variable-access-expression 'x)
 		      (make-il:binary-expression
 		       (lambda (continuation8 value8 value9 count8 limit8)
 			(unless (= count8 count)
@@ -702,7 +734,7 @@
 	   ;; This is a closure that behaves like \c.resume(c).
 	   (make-il:closure
 	    (make-il:lambda-expression
-	     'c
+	     (make-il:variable-access-expression 'c)
 	     (make-il:unary-expression
 	      (lambda (continuation10 value10 count10 limit10)
 	       ;; continuation10 is ignored. What this means is that the CPS
@@ -1082,6 +1114,13 @@
 	     (else (loop (macro-expand e) xs))))))
     (else (compile-time-error "Invalid expression: ~s" e)))))
 
+ (define (new-cons-expression e1 e2)
+  (make-il:binary-expression
+   (lambda (continuation value1 value2 count limit)
+    (il:call-continuation (cons value1 value2) count))
+   e1
+   e2))
+
  (define (internalize-expression e)
   (cond
    ((boolean? e) (internalize-expression `',e))
@@ -1106,11 +1145,8 @@
      ((let) (internalize-expression (macro-expand e)))
      ((let*) (internalize-expression (macro-expand e)))
      ((if) (internalize-expression (macro-expand e)))
-     ((cons) (make-il:binary-expression
-	      (lambda (continuation value1 value2 count limit)
-	       (il:call-continuation (cons value1 value2) count))
-	      (internalize-expression (second e))
-	      (internalize-expression (third e))))
+     ((cons) (new-cons-expression (internalize-expression (second e))
+				  (internalize-expression (third e))))
      ((cons*) (internalize-expression (macro-expand e)))
      ((list) (internalize-expression (macro-expand e)))
      ((cond) (internalize-expression (macro-expand e)))
@@ -1134,11 +1170,12 @@
 	      (free-variables e)))))
 
  (define (make-unary-primitive variable f)
+  ;;\needswork: type check
   (make-il:binding
    variable
    (make-il:closure
     (make-il:lambda-expression
-     'x
+     (make-il:variable-access-expression 'x)
      (make-il:unary-expression
       (lambda (continuation value count limit)
        (il:call-continuation (f value) count))
@@ -1146,28 +1183,36 @@
     '())))
 
  (define (make-binary-primitive variable f)
+  ;;\needswork: type check
   (make-il:binding
    variable
    (make-il:closure
     (make-il:lambda-expression
-     'x
-     (make-il:unary-expression
-      (lambda (continuation value count limit)
-       (il:call-continuation (f (car value) (cdr value)) count))
-      (make-il:variable-access-expression 'x)))
+     (new-cons-expression (make-il:variable-access-expression 'x1)
+			  (make-il:variable-access-expression 'x2))
+     (make-il:binary-expression
+      (lambda (continuation value1 value2 count limit)
+       (il:call-continuation (f value1 value2) count))
+      (make-il:variable-access-expression 'x1)
+      (make-il:variable-access-expression 'x2)))
     '())))
 
  (define (make-ternary-primitive variable f)
+  ;;\needswork: type check
   (make-il:binding
    variable
    (make-il:closure
     (make-il:lambda-expression
-     'x
-     (make-il:unary-expression
-      (lambda (continuation value count limit)
-       (il:call-continuation
-	(f (car value) (car (cdr value)) (cdr (cdr value))) count))
-      (make-il:variable-access-expression 'x)))
+     (new-cons-expression
+      (make-il:variable-access-expression 'x1)
+      (new-cons-expression (make-il:variable-access-expression 'x2)
+			   (make-il:variable-access-expression 'x3)))
+     (make-il:ternary-expression
+      (lambda (continuation value1 value2 value3 count limit)
+       (il:call-continuation (f value1 value2 value3) count))
+      (make-il:variable-access-expression 'x1)
+      (make-il:variable-access-expression 'x2)
+      (make-il:variable-access-expression 'x3)))
     '())))
 
  (define *top-level-environment*
