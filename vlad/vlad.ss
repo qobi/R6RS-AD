@@ -939,14 +939,55 @@
  (define (run-time-error message . arguments)
   (apply error #f message arguments))
 
+ (define (has-extension? pathname)
+  (let loop ((l (reverse (string->list pathname))))
+   (and (not (null? l))
+	(not (char=? (first l) #\/))
+	(or (char=? (first l) #\.) (loop (rest l))))))
+
+ (define (default-extension pathname extension)
+  (if (has-extension? pathname)
+      pathname
+      (string-append pathname "." extension)))
+
+ ;;\needswork: place holder for now
+ (define (can-open-file-for-input? pathname) #t)
+
+ (define *include-path* '())
+
+ (define (search-include-path-without-extension pathname)
+  (cond ((can-open-file-for-input? pathname) pathname)
+	((and (>= (string-length pathname) 1)
+	      (char=? (string-ref pathname 0) #\/))
+	 (compile-time-error "Cannot find: ~a" pathname))
+	(else (let loop ((include-path *include-path*))
+	       (cond ((null? include-path)
+		      (compile-time-error "Cannot find: ~a" pathname))
+		     ((can-open-file-for-input?
+		       (string-append (first include-path) "/" pathname))
+		      (string-append (first include-path) "/" pathname))
+		     (else (loop (rest include-path))))))))
+
+ (define (search-include-path pathname)
+  (search-include-path-without-extension (default-extension pathname "vlad")))
+
  (define (read-source pathname)
-  ;; removed default extension
-  ;; removed include
-  (call-with-input-file pathname
-   (lambda (input-port)
-    (let loop ((es '()))
-     (let ((e (read input-port)))
-      (if (eof-object? e) (reverse es) (loop (cons e es))))))))
+  (let ((pathname (default-extension pathname "vlad")))
+   (unless (can-open-file-for-input? pathname)
+    (compile-time-error "Cannot find: ~a" pathname))
+   (call-with-input-file pathname
+    (lambda (input-port)
+     (let loop ((es '()))
+      (let ((e (read input-port)))
+       (cond
+	((eof-object? e) (reverse es))
+	((and (list? e)
+	      (= (length e) 2)
+	      (eq? (first e) 'include)
+	      (string? (second e)))
+	 (loop
+	  (append (reverse (read-source (search-include-path (second e)))) es)))
+	(else (loop (cons e es))))))))))
 
  (define (concrete-variable? x)
   ;; removed alpha anf backpropagator perturbation forward sensitivity reverse
