@@ -259,7 +259,10 @@
 
  (define-record-type il:binding (fields variable value))
 
- (define-record-type il:closure (fields expression environment))
+ (define-record-type il:nonrecursive-closure (fields expression environment))
+
+ (define-record-type il:recursive-closure
+  (fields values variables expressions index))
 
  (define-record-type il:continuation (fields procedure values))
 
@@ -288,9 +291,15 @@
 	((il:binding? x)
 	 (make-il:binding (il:binding-variable x)
 			  (il:walk1 f (il:binding-value x))))
-	((il:closure? x)
-	 (make-il:closure (il:closure-expression x)
-			  (il:walk1 f (il:closure-environment x))))
+	((il:nonrecursive-closure? x)
+	 (make-il:nonrecursive-closure
+	  (il:nonrecursive-closure-expression x)
+	  (il:walk1 f (il:nonrecursive-closure-environment x))))
+	((il:recursive-closure? x)
+	 (make-il:recursive-closure (il:walk1 f (il:recursive-closure-values x))
+				    (il:recursive-closure-variables x)
+				    (il:recursive-closure-expressions x)
+				    (il:recursive-closure-index x)))
 	((il:continuation? x)
 	 (make-il:continuation (il:continuation-procedure x)
 			       (il:walk1 f (il:continuation-values x))))
@@ -316,12 +325,27 @@
     (make-il:binding
      (il:binding-variable x)
      (il:walk2 f (il:binding-value x) (il:binding-value x-prime))))
-   ((and (il:closure? x) (il:closure? x-prime)
-	 (eq? (il:closure-expression x) (il:closure-expression x-prime)))
-    (make-il:closure (il:closure-expression x)
-		     (il:walk2 f
-			       (il:closure-environment x)
-			       (il:closure-environment x-prime))))
+   ((and (il:nonrecursive-closure? x) (il:nonrecursive-closure? x-prime)
+	 (eq? (il:nonrecursive-closure-expression x)
+	      (il:nonrecursive-closure-expression x-prime)))
+    (make-il:nonrecursive-closure
+     (il:nonrecursive-closure-expression x)
+     (il:walk2 f
+	       (il:nonrecursive-closure-environment x)
+	       (il:nonrecursive-closure-environment x-prime))))
+   ((and (il:recursive-closure? x) (il:recursive-closure? x-prime)
+	 (equal? (il:recursive-closure-variables x)
+		 (il:recursive-closure-variables x-prime))
+	 (equal? (il:recursive-closure-expressions x)
+		 (il:recursive-closure-expressions x-prime))
+	 (= (il:recursive-closure-index x)
+	    (il:recursive-closure-index x-prime)))
+    (make-il:recursive-closure (il:walk2 f
+					 (il:recursive-closure-values x)
+					 (il:recursive-closure-values x-prime))
+			       (il:recursive-closure-variables x)
+			       (il:recursive-closure-expressions x)
+			       (il:recursive-closure-index x)))
    ((and (il:continuation? x)
 	 (il:continuation? x-prime)
 	 (eq? (il:continuation-procedure x)
@@ -350,7 +374,9 @@
 	((real? x) (f x))
 	((pair? x) (il:walk1! f (car x)) (il:walk1! f (cdr x)))
 	((il:binding? x) (il:walk1! f (il:binding-value x)))
-	((il:closure? x) (il:walk1! f (il:closure-environment x)))
+	((il:nonrecursive-closure? x)
+	 (il:walk1! f (il:nonrecursive-closure-environment x)))
+	((il:recursive-closure? x) (il:walk1 f (il:recursive-closure-values x)))
 	((il:continuation? x) (il:walk1! f (il:continuation-values x)))
 	((il:checkpoint? x)
 	 (il:walk1! f (il:checkpoint-continuation x))
@@ -370,10 +396,23 @@
 	 (il:binding? x-prime)
 	 (eq? (il:binding-variable x) (il:binding-variable x-prime)))
     (il:walk2! f (il:binding-value x) (il:binding-value x-prime)))
-   ((and (il:closure? x)
-	 (il:closure? x-prime)
-	 (eq? (il:closure-expression x) (il:closure-expression x-prime)))
-    (il:walk2! f (il:closure-environment x) (il:closure-environment x-prime)))
+   ((and (il:nonrecursive-closure? x)
+	 (il:nonrecursive-closure? x-prime)
+	 (eq? (il:nonrecursive-closure-expression x)
+	      (il:nonrecursive-closure-expression x-prime)))
+    (il:walk2! f
+	       (il:nonrecursive-closure-environment x)
+	       (il:nonrecursive-closure-environment x-prime)))
+   ((and (il:recursive-closure? x) (il:recursive-closure? x-prime)
+	 (equal? (il:recursive-closure-variables x)
+		 (il:recursive-closure-variables x-prime))
+	 (equal? (il:recursive-closure-expressions x)
+		 (il:recursive-closure-expressions x-prime))
+	 (= (il:recursive-closure-index x)
+	    (il:recursive-closure-index x-prime)))
+    (il:walk2 f
+	      (il:recursive-closure-values x)
+	      (il:recursive-closure-values x-prime)))
    ((and (il:continuation? x)
 	 (il:continuation? x-prime)
 	 (eq? (il:continuation-procedure x)
@@ -388,6 +427,9 @@
     (il:walk2!
      f (il:checkpoint-environment x) (il:checkpoint-environment x-prime)))
    (else (run-time-error "Values don't conform: ~s ~s" x x-prime))))
+
+ (define (il:closure? thing)
+  (or (il:nonrecursive-closure? thing) (il:recursive-closure? thing)))
 
  (define (il:make-continuation procedure . values)
   (make-il:continuation procedure values))
@@ -417,16 +459,17 @@
 	(else (internal-error))))
 
  (define (il:apply continuation value1 value2 count limit)
-  (if (il:closure? value1)
-      (il:eval
-       continuation
-       (il:lambda-expression-expression (il:closure-expression value1))
-       (cons (il:destructure
-	      (il:lambda-expression-parameter (il:closure-expression value1))
-	      value2)
-	     (il:closure-environment value1))
-       count
-       limit)
+  (if (il:nonrecursive-closure? value1)
+      (il:eval continuation
+	       (il:lambda-expression-expression
+		(il:nonrecursive-closure-expression value1))
+	       (cons (il:destructure
+		      (il:lambda-expression-parameter
+		       (il:nonrecursive-closure-expression value1))
+		      value2)
+		     (il:nonrecursive-closure-environment value1))
+	       count
+	       limit)
       (run-time-error "Not a closure: ~s" value1)))
 
  (define (il:if-procedure continuation value1 value2 value3 count limit)
@@ -554,9 +597,10 @@
 		    environment)
 	 (+ count 1)))
        ((il:lambda-expression? expression)
-	(il:call-continuation continuation
-			      (make-il:closure expression environment)
-			      (+ count 1)))
+	(il:call-continuation
+	 continuation
+	 (make-il:nonrecursive-closure expression environment)
+	 (+ count 1)))
        ((il:unary-expression? expression)
 	(il:eval
 	 (il:make-continuation
@@ -688,7 +732,7 @@
 		     continuation
 		     value6)
 		    ;; This is a closure that behaves like \x.checkpoint(f,x,n).
-		    (make-il:closure
+		    (make-il:nonrecursive-closure
 		     (make-il:lambda-expression
 		      (make-il:variable-access-expression 'x)
 		      (make-il:binary-expression
@@ -732,7 +776,7 @@
 	   ;; This continuation will become continuation10 and never be called.
 	   'continuation10
 	   ;; This is a closure that behaves like \c.resume(c).
-	   (make-il:closure
+	   (make-il:nonrecursive-closure
 	    (make-il:lambda-expression
 	     (make-il:variable-access-expression 'c)
 	     (make-il:unary-expression
@@ -1173,7 +1217,7 @@
   ;;\needswork: type check
   (make-il:binding
    variable
-   (make-il:closure
+   (make-il:nonrecursive-closure
     (make-il:lambda-expression
      (make-il:variable-access-expression 'x)
      (make-il:unary-expression
@@ -1186,7 +1230,7 @@
   ;;\needswork: type check
   (make-il:binding
    variable
-   (make-il:closure
+   (make-il:nonrecursive-closure
     (make-il:lambda-expression
      (new-cons-expression (make-il:variable-access-expression 'x1)
 			  (make-il:variable-access-expression 'x2))
@@ -1201,7 +1245,7 @@
   ;;\needswork: type check
   (make-il:binding
    variable
-   (make-il:closure
+   (make-il:nonrecursive-closure
     (make-il:lambda-expression
      (new-cons-expression
       (make-il:variable-access-expression 'x1)
