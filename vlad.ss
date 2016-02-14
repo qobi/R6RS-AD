@@ -476,30 +476,32 @@
 	     count
 	     limit))
    ((il:recursive-closure? value1)
-    (il:eval continuation
-	     (il:lambda-expression-expression
-	      (list-ref (il:recursive-closure-expressions value1)
-			(il:recursive-closure-index value1)))
-	     ;;\needswork: Not safe for space.
-	     (append (il:destructure
-		      (il:lambda-expression-parameter
-		       (list-ref (il:recursive-closure-expressions value1)
-				 (il:recursive-closure-index value1)))
-		      value2)
-		     (map-indexed (lambda (variable index)
-				   (make-il:recursive-closure
-				    (il:recursive-closure-variables value1)
-				    (il:recursive-closure-expressions value1)
-				    index
-				    (il:recursive-closure-environment value1)))
-				  (il:recursive-closure-variables value1))
-		     (il:recursive-closure-environment value1))
-	     count
-	     limit))
+    (il:eval
+     continuation
+     (il:lambda-expression-expression
+      (list-ref (il:recursive-closure-expressions value1)
+		(il:recursive-closure-index value1)))
+     ;;\needswork: Not safe for space.
+     (append (il:destructure
+	      (il:lambda-expression-parameter
+	       (list-ref (il:recursive-closure-expressions value1)
+			 (il:recursive-closure-index value1)))
+	      value2)
+	     (map-indexed (lambda (variable index)
+			   (make-il:binding
+			    variable
+			    (make-il:recursive-closure
+			     (il:recursive-closure-variables value1)
+			     (il:recursive-closure-expressions value1)
+			     index
+			     (il:recursive-closure-environment value1))))
+			  (il:recursive-closure-variables value1))
+	     (il:recursive-closure-environment value1))
+     count
+     limit))
    (else (run-time-error "Not a closure: ~s" value1))))
 
- (define (il:if-procedure continuation value1 value2 value3 count limit)
-  (il:call-continuation continuation (if value1 value2 value3) count))
+ (define (il:if-procedure value1 value2 value3) (if value1 value2 value3))
 
  (define (forward-mode
 	  continuation map-independent map-dependent f x x-perturbation)
@@ -694,11 +696,13 @@
 		 ;;\needswork: Not safe for space.
 		 (append
 		  (map-indexed (lambda (variable index)
-				(make-il:recursive-closure
-				 (il:letrec-expression-variables expression)
-				 (il:letrec-expression-expressions expression)
-				 index
-				 environment))
+				(make-il:binding
+				 variable
+				 (make-il:recursive-closure
+				  (il:letrec-expression-variables expression)
+				  (il:letrec-expression-expressions expression)
+				  index
+				  environment)))
 			       (il:letrec-expression-variables expression))
 		  environment)
 		 (+ count 1)
@@ -1069,8 +1073,8 @@
 	(unless (= (length e) 4)
 	 (compile-time-error "Invalid expression: ~s" e))
 	;; needs work: To ensure that you don't shadow if-procedure.
-	`(if-procedure
-	  ,(second e) (lambda () ,(third e)) (lambda () ,(fourth e))))
+	`((if-procedure
+	   ,(second e) (lambda () ,(third e)) (lambda () ,(fourth e)))))
        ((cons*) (case (length (rest e))
 		 ((0) ''())
 		 ((1) (second e))
