@@ -543,33 +543,30 @@
 		       for-each-dependent2!
 		       f
 		       x
-		       y-sensitivities)
+		       y-sensitivity)
   (set! *e* (+ *e* 1))
   (let ((x-reverse (map-independent tapify x)))
    ;; This does not need to close over continuation, map-independent,
    ;; map-dependent,  for-each-dependent1!, or for-each-dependent2! since they
    ;; are opaque.
    (f (il:make-continuation
-       (lambda (y-reverse count x-reverse y-sensitivities)
-	(let ((x-sensitivities
-	       (map (lambda (y-sensitivity)
-		     (for-each-dependent1!
-		      (lambda (y-reverse)
-		       (when (and (tape? y-reverse)
-				  (not (<_e (tape-epsilon y-reverse) *e*)))
-			(determine-fanout! y-reverse)
-			(initialize-sensitivity! y-reverse)))
-		      y-reverse)
-		     (for-each-dependent2!
-		      (lambda (y-reverse y-sensitivity)
-		       (when (and (tape? y-reverse)
-				  (not (<_e (tape-epsilon y-reverse) *e*)))
-			(determine-fanout! y-reverse)
-			(reverse-phase! y-sensitivity y-reverse)))
-		      y-reverse
-		      y-sensitivity)
-		     (map-independent tape-sensitivity x-reverse))
-		    y-sensitivities)))
+       (lambda (y-reverse count x-reverse y-sensitivity)
+	(for-each-dependent1!
+	 (lambda (y-reverse)
+	  (when (and (tape? y-reverse)
+		     (not (<_e (tape-epsilon y-reverse) *e*)))
+	   (determine-fanout! y-reverse)
+	   (initialize-sensitivity! y-reverse)))
+	 y-reverse)
+	(for-each-dependent2!
+	 (lambda (y-reverse y-sensitivity)
+	  (when (and (tape? y-reverse)
+		     (not (<_e (tape-epsilon y-reverse) *e*)))
+	   (determine-fanout! y-reverse)
+	   (reverse-phase! y-sensitivity y-reverse)))
+	 y-reverse
+	 y-sensitivity)
+	(let ((x-sensitivity (map-independent tape-sensitivity x-reverse)))
 	 (set! *e* (- *e* 1))
 	 (il:call-continuation
 	  continuation
@@ -580,10 +577,10 @@
 		 y-reverse
 		 (tape-primal y-reverse)))
 	    y-reverse)
-	   x-sensitivities)
+	   x-sensitivity)
 	  count)))
        x-reverse
-       y-sensitivities)
+       y-sensitivity)
       x-reverse)))
 
  (define (il:j* continuation value1 value2 value3 count limit)
@@ -598,8 +595,7 @@
  (define (il:*j continuation value1 value2 value3 count limit)
   (reverse-mode
    (il:make-continuation
-    (lambda (y count continuation)
-     (il:call-continuation continuation (list (car y) (car (cadr y))) count))
+    (lambda (y count continuation) (il:call-continuation continuation y count))
     continuation)
    il:walk1
    il:walk1
@@ -607,7 +603,7 @@
    il:walk2!
    (lambda (continuation x) (il:apply continuation value1 x count limit))
    value2
-   (list value3)))
+   value3))
 
  (define (il:eval continuation expression environment count limit)
   ;; Every entry into il:eval increments count exactly once. So if you call
