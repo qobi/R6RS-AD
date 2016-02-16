@@ -378,14 +378,24 @@
 		 (lambda (y-reverse)
 		  (when (and (tape? y-reverse)
 			     (not (<_e (tape-epsilon y-reverse) *e*)))
-		   (determine-fanout! y-reverse)
+		   (determine-fanout! y-reverse)))
+		 y-reverse)
+		(for-each-dependent1!
+		 (lambda (y-reverse)
+		  (when (and (tape? y-reverse)
+			     (not (<_e (tape-epsilon y-reverse) *e*)))
 		   (initialize-sensitivity! y-reverse)))
+		 y-reverse)
+		(for-each-dependent1!
+		 (lambda (y-reverse)
+		  (when (and (tape? y-reverse)
+			     (not (<_e (tape-epsilon y-reverse) *e*)))
+		   (determine-fanout! y-reverse)))
 		 y-reverse)
 		(for-each-dependent2!
 		 (lambda (y-reverse y-sensitivity)
 		  (when (and (tape? y-reverse)
 			     (not (<_e (tape-epsilon y-reverse) *e*)))
-		   (determine-fanout! y-reverse)
 		   (reverse-phase! y-sensitivity y-reverse)))
 		 y-reverse
 		 y-sensitivity)
