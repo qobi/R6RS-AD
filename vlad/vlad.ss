@@ -623,6 +623,16 @@
   ;; with count=0 and limit>=n then it will not checkpoint. But if called with
   ;; count=0 and limit=(0<=i<n) then it will checkpoint upon entry to the ith
   ;; call. The entries are numbered 0,...,i.
+  ;; debugging
+  (begin
+   (display "count=")
+   (write count)
+   (display ", limit=")
+   (write limit)
+   (newline))
+  ;;\needswork: Why is this getting tripped?
+  (when #f
+   (when (> count limit) (internal-error "(> count limit)" count limit)))
   (if (= count limit)
       (make-il:checkpoint continuation expression environment count)
       (cond
@@ -743,137 +753,208 @@
   ;; x is value2
   ;; y is value4
   ;; n is (quotient (- count4 count) 2)
+  ;; debugging
+  (begin
+   (display "entering il:checkpoint-*j count=")
+   (write count)
+   (display ", limit=")
+   (write limit)
+   (newline)
+   (display "counting number of steps")
+   (newline))
   (il:apply
    (il:make-continuation
     (lambda (value4 count4 continuation value1 value2 value3)
+     ;; debugging
+     (begin
+      (display "steps=")
+      (write (- count4 count))
+      (display ", half=")
+      (write (quotient (- count4 count) 2))
+      (display ", count for second half=")
+      (write (+ count (quotient (- count4 count) 2)))
+      (display ", limit for second half=")
+      (write limit)
+      (newline))
      ;; count4 must be greater than count because it is incremented before any
      ;; path to calling this continuation to il:apply.
      ;; (= (+ count 1) count4)<->(zero? (quotient (- count4 count) 2))
      (if (= (+ count 1) count4)
-	 ;; This means that the count for computing primops is ignored.
-	 (il:*j continuation value1 value2 value3 count limit)
+	 (begin
+	  ;; debugging
+	  (begin
+	   (display "base case of *j")
+	   (newline))
+	  (il:*j continuation value1 value2 value3 count limit))
 	 ;; 2. c=checkpoint(f,x,n)
 	 ;; f is value1
 	 ;; x is value2
 	 ;; n is (quotient (- count4 count) 2)
 	 ;; c is checkpoint5
-	 (let ((checkpoint5
-		(il:apply
-		 ;; This continuation won't be called with the checkpoint
-		 ;; computation but will be called upon resume.
-		 (il:make-continuation
-		  ;; This closes over value4 only for consistency checking.
-		  (lambda (value6 count6 continuation value1 value2 value4)
-		   ;; 4. (c,x`)=*j(\x.checkpoint(f,x,n),x,c`)
-		   ;; f is value1
-		   ;; x is value2
-		   ;; c` is (second value6)
-		   ;; c is (first value7)
-		   ;; x` is (second value7)
-		   (unless (equal? value4 (first value6))
-		    (internal-error "(not (equal? value4 (first value6)))"))
-		   ;;\needswork: il:checkpoint-*j
-		   (il:*j
-		    (il:make-continuation
-		     (lambda (value7 count7 continuation value6)
-		      (unless (= count7 (+ count (quotient (- count4 count) 2)))
-		       (internal-error "(not (= count7 (+ count (quotient (- count4 count) 2))))"))
-		      ;; We can't check that (equal? checkpoint5 (first value7))
-		      ;; because we can't close over checkpoint5.
-		      (il:call-continuation
-		       ;; This fakes the count as if both halves of the
-		       ;; computation were executed exactly once.
-		       continuation
-		       (list (first value6) (second value7))
-		       count4))
-		     continuation
-		     value6)
-		    ;; This is a closure that behaves like \x.checkpoint(f,x,n).
-		    (make-il:nonrecursive-closure
-		     (make-il:lambda-expression
-		      (make-il:variable-access-expression 'x)
-		      (make-il:binary-expression
-		       (lambda (continuation8 value8 value9 count8 limit8)
-			(unless (= count8 count)
-			 (internal-error "(not (= count8 count))"))
-			(unless (= limit8
-				   (+ count (quotient (- count4 count) 2)))
-			 (internal-error "(not (= limit8 (+ count (quotient (- count4 count) 2))))"))
-			(il:apply continuation8 value8 value9 count8 limit8))
-		       (make-il:variable-access-expression 'f)
-		       (make-il:variable-access-expression 'x)))
-		     (list (make-il:binding 'f value1)))
-		    value2
-		    (second value6)
-		    ;; This is for the first half of the computation.
-		    count
-		    ;; If (zero? (quotient (- count4 count) 2)) then the
-		    ;; evaluation could checkpoint right at the start without
-		    ;; making any progress. But that can't happen.
-		    (+ count (quotient (- count4 count) 2))))
-		  continuation
+	 (begin
+	  ;; debugging
+	  (begin
+	   (display "inductive case, running first half of computation until checkpoint")
+	   (newline))
+	  (let ((checkpoint5
+		 (il:apply
+		  ;; This continuation won't be called with the checkpoint
+		  ;; computation but will be called upon resume.
+		  (il:make-continuation
+		   ;; This closes over value4 only for consistency checking.
+		   (lambda (value6 count6 continuation value1 value2 value4)
+		    ;; debugging
+		    (begin
+		     (display "finished *j of resume (second half), value6=")
+		     (write value6)
+		     (newline))
+		    ;; 4. (c,x`)=*j(\x.checkpoint(f,x,n),x,c`)
+		    ;; f is value1
+		    ;; x is value2
+		    ;; c` is (second value6)
+		    ;; c is (first value7)
+		    ;; x` is (second value7)
+		    (unless (equal? value4 (first value6))
+		     (internal-error
+		      "(not (equal? value4 (first value6)))"
+		      value4
+		      (first value6)))
+		    (il:checkpoint-*j
+		     (il:make-continuation
+		      (lambda (value7 count7 continuation value6)
+		       (unless (= count7 (+ count (quotient (- count4 count) 2)))
+			(internal-error "(not (= count7 (+ count (quotient (- count4 count) 2))))"
+					count7
+					(+ count (quotient (- count4 count) 2))))
+		       ;; We can't check that (equal? checkpoint5 (first value7))
+		       ;; because we can't close over checkpoint5.
+		       (il:call-continuation
+			;; This fakes the count as if both halves of the
+			;; computation were executed exactly once.
+			continuation
+			(list (first value6) (second value7))
+			count4))
+		      continuation
+		      value6)
+		     ;; This is a closure that behaves like \x.checkpoint(f,x,n).
+		     (make-il:nonrecursive-closure
+		      (make-il:lambda-expression
+		       (make-il:variable-access-expression 'x)
+		       (make-il:binary-expression
+			(lambda (continuation8 value8 value9 count8 limit8)
+			 ;; debugging: We haven't gotten this far yet but I
+			 ;;            suspect that this will trip because of the
+			 ;;            difference in counts due to the binary
+			 ;;            expression and the two variable access
+			 ;;            expresions.
+			 (unless (= count8 count)
+			  (internal-error "(not (= count8 count))" count8 count))
+			 (unless (= limit8
+				    (+ count (quotient (- count4 count) 2)))
+			  (internal-error
+			   "(not (= limit8 (+ count (quotient (- count4 count) 2))))"
+			   limit8
+			   (+ count (quotient (- count4 count) 2))))
+			 (il:apply continuation8 value8 value9 count8 limit8))
+			(make-il:variable-access-expression 'f)
+			(make-il:variable-access-expression 'x)))
+		      (list (make-il:binding 'f value1)))
+		     value2
+		     (second value6)
+		     ;; This is the count for the first half of the computation.
+		     count
+		     ;; This is the limit for the first half of the computation.
+		     ;; If (zero? (quotient (- count4 count) 2)) then the
+		     ;; evaluation could checkpoint right at the start without
+		     ;; making any progress. But that can't happen.
+		     (+ count (quotient (- count4 count) 2))))
+		   continuation
+		   value1
+		   value2
+		   value4)
 		  value1
 		  value2
-		  value4)
-		 value1
-		 value2
-		 ;; This is for the first half of the computation.
-		 ;; This means that the count for computing primops is ignored.
-		 count
-		 ;; If (zero? (quotient (- count4 count) 2)) then the evaluation
-		 ;; could checkpoint right at the start without making any
-		 ;; progress. But that can't happen.
-		 (+ count (quotient (- count4 count) 2)))))
-	  ;; 3. (y,c`)=*j(\c.resume(c),c,y`)
-	  ;; c is checkpoint5
-	  ;; y` is value3
-	  ;; y is (first value6)
-	  ;; c` is (second value6)
-	  ;;\needswork: il:checkpoint-*j
-	  (il:*j
-	   ;; This continuation will become continuation10 and never be called.
-	   'continuation10
-	   ;; This is a closure that behaves like \c.resume(c).
-	   (make-il:nonrecursive-closure
-	    (make-il:lambda-expression
-	     (make-il:variable-access-expression 'c)
-	     (make-il:unary-expression
-	      (lambda (continuation10 value10 count10 limit10)
-	       ;; continuation10 is ignored. What this means is that the CPS
-	       ;; resume never calls its continuation, which in turn means that
-	       ;; the direction-style resume never returns. This is correct, and
-	       ;; is analogous to fail never returning.
-	       ;;\needswork: Could eliminate (il:checkpoint-count value10).
-	       (unless (= count10 (il:checkpoint-count value10))
-		(internal-error
-		 "(not (= count10 (il:checkpoint-count value10)))"))
-	       (unless (= count10 (+ count (quotient (- count4 count) 2)))
-		(error
-		 #f
-		 "(not (= count10 (+ count (quotient (- count4 count) 2))))"))
-	       (unless (= limit10 limit)
-		(internal-error "(not (= limit10 limit))"))
-	       (il:eval (il:checkpoint-continuation value10)
-			(il:checkpoint-expression value10)
-			(il:checkpoint-environment value10)
-			count10
-			limit10))
-	      (make-il:variable-access-expression 'c)))
-	    '())
-	   checkpoint5
-	   value3
-	   ;; This is for the second half of the computation.
-	   ;;\needswork: To guarantee that
-	   ;;            (> limit (+ count (quotient (- count4 count) 2))).
-	   (+ count (quotient (- count4 count) 2))
-	   limit))))
+		  ;; This is the count for the first half of the computation.
+		  count
+		  ;; This is the limit for the first half of the computation.
+		  ;; If (zero? (quotient (- count4 count) 2)) then the evaluation
+		  ;; could checkpoint right at the start without making any
+		  ;; progress. But that can't happen.
+		  (+ count (quotient (- count4 count) 2)))))
+	   ;; debugging
+	   (begin
+	    (display "after checkpoint, starting *j of resume (second half)")
+	    (newline)
+	    (display "backing up count by 2")
+	    (newline))
+	   ;; 3. (y,c`)=*j(\c.resume(c),c,y`)
+	   ;; c is checkpoint5
+	   ;; y` is value3
+	   ;; y is (first value6)
+	   ;; c` is (second value6)
+	   (il:checkpoint-*j
+	    ;; This continuation will become continuation10 and never be called.
+	    'continuation10
+	    ;; This is a closure that behaves like \c.resume(c).
+	    (make-il:nonrecursive-closure
+	     (make-il:lambda-expression
+	      (make-il:variable-access-expression 'c)
+	      (make-il:unary-expression
+	       (lambda (continuation10 value10 count10 limit10)
+		;; continuation10 is ignored. What this means is that the CPS
+		;; resume never calls its continuation, which in turn means that
+		;; the direction-style resume never returns. This is correct, and
+		;; is analogous to fail never returning.
+		;;\needswork: Could eliminate (il:checkpoint-count value10).
+		(unless (= count10 (il:checkpoint-count value10))
+		 (internal-error
+		  "(not (= count10 (il:checkpoint-count value10)))"
+		  count10
+		  (il:checkpoint-count value10)))
+		(unless (= count10 (+ count (quotient (- count4 count) 2)))
+		 (error
+		  #f
+		  "(not (= count10 (+ count (quotient (- count4 count) 2))))"
+		  count10
+		  (+ count (quotient (- count4 count) 2))))
+		(unless (= (il:checkpoint-count value10)
+			   (+ count (quotient (- count4 count) 2)))
+		 (internal-error
+		  "(not (= (il:checkpoint-count value10) (+ count (quotient (- count4 count) 2))))"
+		  (il:checkpoint-count value10)
+		  (+ count (quotient (- count4 count) 2))))
+		(unless (= limit10 limit)
+		 (internal-error "(not (= limit10 limit))" limit10 limit))
+		(il:eval (il:checkpoint-continuation value10)
+			 (il:checkpoint-expression value10)
+			 (il:checkpoint-environment value10)
+			 ;; This is the count for the second half of the
+			 ;; computation.
+			 (il:checkpoint-count value10)
+			 ;; This is the limit for the second half of the
+			 ;; computation.
+			 limit10))
+	       (make-il:variable-access-expression 'c)))
+	     '())
+	    checkpoint5
+	    value3
+	    ;; This is the count for the second half of the computation.
+	    ;; The -2 is a fudge for the unary expression and the variable
+	    ;; access expression c.
+	    ;;\needswork: To guarantee that
+	    ;;            (< (+ count (quotient (- count4 count) 2)) limit).
+	    (+ count (quotient (- count4 count) 2) -2)
+	    ;; This is the limit for the second half of the computation.
+	    limit)))))
     continuation
     value1
     value2
     value3)
    value1
    value2
+   ;; This is the count for the whole computation.
    count
+   ;; This is the limit for the whole computation.
    limit))
 
  (define first car)
