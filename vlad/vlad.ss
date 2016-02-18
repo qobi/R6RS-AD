@@ -819,6 +819,8 @@
 		      "(not (equal? value4 (first value6)))"
 		      value4
 		      (first value6)))
+		    (display "backing up count by 3")
+		    (newline)
 		    (il:checkpoint-*j
 		     (il:make-continuation
 		      (lambda (value7 count7 limit7 continuation value6)
@@ -844,11 +846,6 @@
 		       (make-il:variable-access-expression 'x)
 		       (make-il:binary-expression
 			(lambda (continuation8 value8 value9 count8 limit8)
-			 ;; debugging: We haven't gotten this far yet but I
-			 ;;            suspect that this will trip because of the
-			 ;;            difference in counts due to the binary
-			 ;;            expression and the two variable access
-			 ;;            expresions.
 			 (unless (= count8 count)
 			  (internal-error "(not (= count8 count))" count8 count))
 			 (unless (= limit8
@@ -867,9 +864,9 @@
 		     ;; computation. If (zero? (quotient (- count4 count) 2))
 		     ;; then the evaluation could checkpoint right at the start
 		     ;; without making any progress. But that can't happen.
-		     ;;\needswork: Probably need a -3 as a fudge for the binary
-		     ;; expression and the variable access expressions f and x.
-		     count
+		     ;; The -3 is a fudge for the binary expression and the
+		     ;; variable access expressions f and x.
+		     (- count 3)
 		     (+ count (quotient (- count4 count) 2))))
 		   continuation
 		   value1
