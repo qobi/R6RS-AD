@@ -431,6 +431,56 @@
      f (il:checkpoint-environment x) (il:checkpoint-environment x-prime)))
    (else (run-time-error "Values don't conform: ~s ~s" x x-prime))))
 
+ (define (il:count-dummies x)
+  (cond ((eq? x 'continuation10) 1)
+	((eq? x #t) 0)
+	((eq? x #f) 0)
+	((null? x) 0)
+	((dreal? x) 0)
+	((pair? x) (+ (il:count-dummies (car x)) (il:count-dummies (cdr x))))
+	((il:binding? x) (il:count-dummies (il:binding-value x)))
+	((il:nonrecursive-closure? x)
+	 (il:count-dummies (il:nonrecursive-closure-environment x)))
+	((il:recursive-closure? x)
+	 (il:count-dummies (il:recursive-closure-environment x)))
+	((il:continuation? x)
+	 (il:count-dummies (il:continuation-values x)))
+	((il:checkpoint? x)
+	 (+ (il:count-dummies (il:checkpoint-continuation x))
+	    (il:count-dummies (il:checkpoint-environment x))))
+	(else (internal-error))))
+
+ (define (il:replace-dummy c x)
+  (cond
+   ((eq? x 'continuation10) c)
+   ((eq? x #t) #t)
+   ((eq? x #f) #f)
+   ((null? x) '())
+   ((dreal? x) x)
+   ((pair? x) (cons (il:replace-dummy c (car x)) (il:replace-dummy c (cdr x))))
+   ((il:binding? x)
+    (make-il:binding (il:binding-variable x)
+		     (il:replace-dummy c (il:binding-value x))))
+   ((il:nonrecursive-closure? x)
+    (make-il:nonrecursive-closure
+     (il:nonrecursive-closure-expression x)
+     (il:replace-dummy c (il:nonrecursive-closure-environment x))))
+   ((il:recursive-closure? x)
+    (make-il:recursive-closure
+     (il:recursive-closure-variables x)
+     (il:recursive-closure-expressions x)
+     (il:recursive-closure-index x)
+     (il:replace-dummy c (il:recursive-closure-environment x))))
+   ((il:continuation? x)
+    (make-il:continuation (il:continuation-procedure x)
+			  (il:replace-dummy c (il:continuation-values x))))
+   ((il:checkpoint? x)
+    (make-il:checkpoint (il:replace-dummy c (il:checkpoint-continuation x))
+			(il:checkpoint-expression x)
+			(il:replace-dummy c (il:checkpoint-environment x))
+			(il:checkpoint-count x)))
+   (else (internal-error))))
+
  (define (il:closure? thing)
   (or (il:nonrecursive-closure? thing) (il:recursive-closure? thing)))
 
@@ -798,80 +848,10 @@
 	   (newline))
 	  (let ((checkpoint5
 		 (il:apply
-		  ;; This continuation won't be called with the checkpoint
-		  ;; computation but will be called upon resume.
-		  (il:make-continuation
-		   ;; This closes over value4 only for consistency checking.
-		   (lambda (value6 count6 limit6 continuation value1 value2 value4)
-		    ;; debugging
-		    (begin
-		     (display "finished *j of resume (second half), value6=")
-		     (write value6)
-		     (newline))
-		    ;; 4. (c,x`)=*j(\x.checkpoint(f,x,n),x,c`)
-		    ;; f is value1
-		    ;; x is value2
-		    ;; c` is (second value6)
-		    ;; c is (first value7)
-		    ;; x` is (second value7)
-		    (unless (equal? value4 (first value6))
-		     (internal-error
-		      "(not (equal? value4 (first value6)))"
-		      value4
-		      (first value6)))
-		    (display "backing up count by 3")
-		    (newline)
-		    (il:checkpoint-*j
-		     (il:make-continuation
-		      (lambda (value7 count7 limit7 continuation value6)
-		       (unless (= count7 (+ count (quotient (- count4 count) 2)))
-			(internal-error "(not (= count7 (+ count (quotient (- count4 count) 2))))"
-					count7
-					(+ count (quotient (- count4 count) 2))))
-		       ;; We can't check that (equal? checkpoint5 (first value7))
-		       ;; because we can't close over checkpoint5.
-		       (il:call-continuation
-			continuation
-			(list (first value6) (second value7))
-			;; This fakes the count and limit to be the same as
-			;; computed for primops, as if the entire computation
-			;; were done exactly once.
-			count4
-			limit4))
-		      continuation
-		      value6)
-		     ;; This is a closure that behaves like \x.checkpoint(f,x,n).
-		     (make-il:nonrecursive-closure
-		      (make-il:lambda-expression
-		       (make-il:variable-access-expression 'x)
-		       (make-il:binary-expression
-			(lambda (continuation8 value8 value9 count8 limit8)
-			 (unless (= count8 count)
-			  (internal-error "(not (= count8 count))" count8 count))
-			 (unless (= limit8
-				    (+ count (quotient (- count4 count) 2)))
-			  (internal-error
-			   "(not (= limit8 (+ count (quotient (- count4 count) 2))))"
-			   limit8
-			   (+ count (quotient (- count4 count) 2))))
-			 (il:apply continuation8 value8 value9 count8 limit8))
-			(make-il:variable-access-expression 'f)
-			(make-il:variable-access-expression 'x)))
-		      (list (make-il:binding 'f value1)))
-		     value2
-		     (second value6)
-		     ;; These are the count and limit for the first half of the
-		     ;; computation. If (zero? (quotient (- count4 count) 2))
-		     ;; then the evaluation could checkpoint right at the start
-		     ;; without making any progress. But that can't happen.
-		     ;; The -3 is a fudge for the binary expression and the
-		     ;; variable access expressions f and x.
-		     (- count 3)
-		     (+ count (quotient (- count4 count) 2))))
-		   continuation
-		   value1
-		   value2
-		   value4)
+		  ;; This continuation will be spliced out and never called.
+		  ;; It won't be called with the checkpoint computation but
+		  ;; would have been called upon resume.
+		  'continuation10
 		  value1
 		  value2
 		  ;; These are the count and limit for the first half of the
@@ -892,18 +872,102 @@
 	   ;; y is (first value6)
 	   ;; c` is (second value6)
 	   (il:checkpoint-*j
-	    ;; This continuation will become continuation10 and never be called.
-	    'continuation10
+	    ;; This continuation will become continuation10. It would normally
+	    ;; not be called except that it is spliced in for the dummy
+	    ;; continuation10.
+	    (il:make-continuation
+	     ;; This closes over value4 and checkpoint5 only for consistency
+	     ;; checking.
+	     (lambda (value6 count6 limit6 continuation value1 value2 value4
+			     checkpoint5)
+	      ;; debugging
+	      (begin
+	       (display "finished *j of resume (second half), value6=")
+	       (write value6)
+	       (newline))
+	      ;; 4. (c,x`)=*j(\x.checkpoint(f,x,n),x,c`)
+	      ;; f is value1
+	      ;; x is value2
+	      ;; c` is (second value6)
+	      ;; c is (first value7)
+	      ;; x` is (second value7)
+	      (unless (equal? value4 (first value6))
+	       (internal-error
+		"(not (equal? value4 (first value6)))"
+		value4
+		(first value6)))
+	      (display "backing up count by 3")
+	      (newline)
+	      (il:checkpoint-*j
+	       (il:make-continuation
+		;; This closes over checkpoint5 only for consistency checking.
+		(lambda (value7 count7 limit7 continuation checkpoint5 value6)
+		 (unless (= count7 (+ count (quotient (- count4 count) 2)))
+		  (internal-error "(not (= count7 (+ count (quotient (- count4 count) 2))))"
+				  count7
+				  (+ count (quotient (- count4 count) 2))))
+		 (unless (equal? checkpoint5 (first value7))
+		  (internal-error "(not (equal? checkpoint5 (first value7)))"
+				  checkpoint5
+				  (first value7)))
+		 (il:call-continuation
+		  continuation
+		  (list (first value6) (second value7))
+		  ;; This fakes the count and limit to be the same as
+		  ;; computed for primops, as if the entire computation
+		  ;; were done exactly once.
+		  count4
+		  limit4))
+		continuation
+		checkpoint5
+		value6)
+	       ;; This is a closure that behaves like \x.checkpoint(f,x,n).
+	       (make-il:nonrecursive-closure
+		(make-il:lambda-expression
+		 (make-il:variable-access-expression 'x)
+		 (make-il:binary-expression
+		  (lambda (continuation8 value8 value9 count8 limit8)
+		   ;; debugging
+		   (begin
+		    (display "starting checkpoint(f,x,n)")
+		    (newline))
+		   (unless (= count8 count)
+		    (internal-error "(not (= count8 count))" count8 count))
+		   (unless (= limit8
+			      (+ count (quotient (- count4 count) 2)))
+		    (internal-error
+		     "(not (= limit8 (+ count (quotient (- count4 count) 2))))"
+		     limit8
+		     (+ count (quotient (- count4 count) 2))))
+		   (il:apply continuation8 value8 value9 count8 limit8))
+		  (make-il:variable-access-expression 'f)
+		  (make-il:variable-access-expression 'x)))
+		(list (make-il:binding 'f value1)))
+	       value2
+	       (second value6)
+	       ;; These are the count and limit for the first half of the
+	       ;; computation. If (zero? (quotient (- count4 count) 2))
+	       ;; then the evaluation could checkpoint right at the start
+	       ;; without making any progress. But that can't happen.
+	       ;; The -3 is a fudge for the binary expression and the
+	       ;; variable access expressions f and x.
+	       (- count 3)
+	       (+ count (quotient (- count4 count) 2))))
+	     continuation
+	     value1
+	     value2
+	     value4
+	     checkpoint5)
 	    ;; This is a closure that behaves like \c.resume(c).
 	    (make-il:nonrecursive-closure
 	     (make-il:lambda-expression
 	      (make-il:variable-access-expression 'c)
 	      (make-il:unary-expression
 	       (lambda (continuation10 value10 count10 limit10)
-		;; continuation10 is ignored. What this means is that the CPS
-		;; resume never calls its continuation, which in turn means that
-		;; the direct-style resume never returns. This is correct, and
-		;; is analogous to fail never returning.
+		;; debugging
+		(begin
+		 (display "starting resume(c)")
+		 (newline))
 		;;\needswork: Could eliminate (il:checkpoint-count value10).
 		(unless (= count10 (il:checkpoint-count value10))
 		 (internal-error
@@ -922,9 +986,18 @@
 		  "(not (= (il:checkpoint-count value10) (+ count (quotient (- count4 count) 2))))"
 		  (il:checkpoint-count value10)
 		  (+ count (quotient (- count4 count) 2))))
-		(unless (= limit10 limit)
-		 (internal-error "(not (= limit10 limit))" limit10 limit))
-		(il:eval (il:checkpoint-continuation value10)
+		(unless (= (il:count-dummies
+			    (il:checkpoint-continuation value10))
+			   1)
+		 (internal-error "The number of dummies is not one"
+				 (il:count-dummies
+				  (il:checkpoint-continuation value10))))
+		;;\needswork: I don't know why this is tripped.
+		(when #f
+		 (unless (= limit10 limit)
+		  (internal-error "(not (= limit10 limit))" limit10 limit)))
+		(il:eval (il:replace-dummy
+			  continuation10 (il:checkpoint-continuation value10))
 			 (il:checkpoint-expression value10)
 			 (il:checkpoint-environment value10)
 			 ;; These are the count and limit for the second half
