@@ -283,7 +283,8 @@
 	(else (il:lookup variable (rest environment)))))
 
  (define (il:walk1 f x)
-  (cond ((eq? x #t) #t)
+  (cond ((eq? x 'continuation10) 'continuation10)
+	((eq? x #t) #t)
 	((eq? x #f) #f)
 	((null? x) '())
 	((dreal? x) (f x))
@@ -313,6 +314,7 @@
 
  (define (il:walk2 f x x-prime)
   (cond
+   ((and (eq? x 'continuation10) (eq? x-prime 'continuation10)) 'continuation10)
    ((and (eq? x #t) (eq? x-prime #t)) #t)
    ((and (eq? x #f) (eq? x-prime #f)) #f)
    ((and (null? x) (null? x-prime)) '())
@@ -370,7 +372,8 @@
    (else (run-time-error "Values don't conform: ~s ~s" x x-prime))))
 
  (define (il:walk1! f x)
-  (cond ((eq? x #t) #f)
+  (cond ((eq? x 'continuation10) #f)
+	((eq? x #t) #f)
 	((eq? x #f) #f)
 	((null? x) #f)
 	((dreal? x) (f x))
@@ -388,6 +391,7 @@
 
  (define (il:walk2! f x x-prime)
   (cond
+   ((and (eq? x 'continuation10) (eq? x-prime 'continuation10)) #f)
    ((and (eq? x #t) (eq? x-prime #t)) #f)
    ((and (eq? x #f) (eq? x-prime #f)) #f)
    ((and (null? x) (null? x-prime)) #f)
@@ -828,8 +832,12 @@
       (newline))
      ;; count4 must be greater than count because it is incremented before any
      ;; path to calling this continuation to il:apply.
-     ;; (= (+ count 1) count4)<->(zero? (quotient (- count4 count) 2))
-     (if (= (+ count 1) count4)
+     (unless (> count4 count)
+      (internal-error "(not (> count4 count))" count4 count))
+     ;; debugging: The base case would nominally be triggered when
+     ;;            count4-count=1 but this difference is to compensate for
+     ;;            the fudge factors in the counts.
+     (if (<= (- count4 count) 5)
 	 (begin
 	  ;; debugging
 	  (begin
