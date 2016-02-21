@@ -266,7 +266,7 @@
  (define-record-type il:recursive-closure
   (fields variables expressions index environment))
 
- (define-record-type il:continuation (fields procedure values))
+ (define-record-type il:continuation (fields id procedure values))
 
  (define-record-type il:checkpoint
   (fields continuation expression environment count))
@@ -306,7 +306,8 @@
 	  (il:recursive-closure-index x)
 	  (il:walk1 f (il:recursive-closure-environment x))))
 	((il:continuation? x)
-	 (make-il:continuation (il:continuation-procedure x)
+	 (make-il:continuation (il:continuation-id x)
+			       (il:continuation-procedure x)
 			       (il:walk1 f (il:continuation-values x))))
 	((il:checkpoint? x)
 	 (make-il:checkpoint (il:walk1 f (il:checkpoint-continuation x))
@@ -356,9 +357,12 @@
 	       (il:recursive-closure-environment x-prime))))
    ((and (il:continuation? x)
 	 (il:continuation? x-prime)
-	 (eq? (il:continuation-procedure x)
-	      (il:continuation-procedure x-prime)))
+	 ;; Can't check eq? on il:continuation-procedure because c and c` are
+	 ;; generated from different calls to il:apply/il:eval.
+	 (= (il:continuation-id x) (il:continuation-id x-prime)))
     (make-il:continuation
+     (il:continuation-id x)
+     ;; Use the one from x, not x-prime.
      (il:continuation-procedure x)
      (il:walk2 f (il:continuation-values x) (il:continuation-values x-prime))))
    ((and (il:checkpoint? x)
@@ -432,10 +436,9 @@
 	      (il:recursive-closure-environment x-prime)))
    ((and (il:continuation? x)
 	 (il:continuation? x-prime)
-	 ;;\needswork
-	 (or #t
-	     (eq? (il:continuation-procedure x)
-		  (il:continuation-procedure x-prime))))
+	 ;; Can't check eq? on il:continuation-procedure because c and c` are
+	 ;; generated from different calls to il:apply/il:eval.
+	 (= (il:continuation-id x) (il:continuation-id x-prime)))
     (il:walk2! f (il:continuation-values x) (il:continuation-values x-prime)))
    ((and (il:checkpoint? x)
 	 (il:checkpoint? x-prime)
@@ -490,7 +493,8 @@
      (il:recursive-closure-index x)
      (il:replace-dummy c (il:recursive-closure-environment x))))
    ((il:continuation? x)
-    (make-il:continuation (il:continuation-procedure x)
+    (make-il:continuation (il:continuation-id x)
+			  (il:continuation-procedure x)
 			  (il:replace-dummy c (il:continuation-values x))))
    ((il:checkpoint? x)
     (make-il:checkpoint (il:replace-dummy c (il:checkpoint-continuation x))
@@ -502,8 +506,8 @@
  (define (il:closure? thing)
   (or (il:nonrecursive-closure? thing) (il:recursive-closure? thing)))
 
- (define (il:make-continuation procedure . values)
-  (make-il:continuation procedure values))
+ (define (il:make-continuation id procedure . values)
+  (make-il:continuation id procedure values))
 
  (define (il:call-continuation continuation value count limit)
   (apply (il:continuation-procedure continuation)
@@ -580,9 +584,8 @@
  (define (forward-mode
 	  continuation map-independent map-dependent f x x-perturbation)
   (set! *e* (+ *e* 1))
-  ;; This does not need to close over continuation or map-dependent since they
-  ;; are opaque.
   (f (il:make-continuation
+      0
       (lambda (y-forward count limit)
        (set! *e* (- *e* 1))
        (il:call-continuation
@@ -616,10 +619,8 @@
 		       y-sensitivity)
   (set! *e* (+ *e* 1))
   (let ((x-reverse (map-independent tapify x)))
-   ;; This does not need to close over continuation, map-independent,
-   ;; map-dependent,  for-each-dependent1!, or for-each-dependent2! since they
-   ;; are opaque.
    (f (il:make-continuation
+       1
        (lambda (y-reverse count limit x-reverse y-sensitivity)
 	(for-each-dependent1!
 	 (lambda (y-reverse)
@@ -724,6 +725,7 @@
        ((il:unary-expression? expression)
 	(il:eval
 	 (il:make-continuation
+	  2
 	  (lambda (value count limit continuation)
 	   ((il:unary-expression-procedure expression)
 	    continuation value count limit))
@@ -735,9 +737,11 @@
        ((il:binary-expression? expression)
 	(il:eval
 	 (il:make-continuation
+	  3
 	  (lambda (value1 count limit continuation)
 	   (il:eval
 	    (il:make-continuation
+	     4
 	     (lambda (value2 count limit continuation value1)
 	      ((il:binary-expression-procedure expression)
 	       continuation value1 value2 count limit))
@@ -755,11 +759,14 @@
        ((il:ternary-expression? expression)
 	(il:eval
 	 (il:make-continuation
+	  5
 	  (lambda (value1 count limit continuation)
 	   (il:eval
 	    (il:make-continuation
+	     6
 	     (lambda (value2 count limit continuation value1)
 	      (il:eval (il:make-continuation
+			7
 			(lambda (value3 count limit continuation value1 value2)
 			 ((il:ternary-expression-procedure expression)
 			  continuation value1 value2 value3 count limit))
@@ -841,6 +848,7 @@
    (newline))
   (il:apply
    (il:make-continuation
+    8
     (lambda (value4 count4 limit4 continuation value1 value2 value3)
      (when *debugging?*
       (display "finished step 1")
@@ -909,6 +917,7 @@
 	    ;; not be called except that it is spliced in for the dummy
 	    ;; continuation10.
 	    (il:make-continuation
+	     9
 	     ;; This closes over value4 and checkpoint5 only for consistency
 	     ;; checking.
 	     (lambda (value6 count6 limit6 continuation value1 value2 value4
@@ -940,6 +949,7 @@
 			       (first value6)))
 	      (il:checkpoint-*j
 	       (il:make-continuation
+		10
 		;; This closes over checkpoint5 only for consistency checking.
 		(lambda (value7 count7 limit7 continuation checkpoint5 value6)
 		 ;; count7 and limit7, that at the end of step 4, are ignored,
@@ -952,7 +962,12 @@
 		   "(not (= count7 (+ count (quotient (- count4 count) 2))))"
 		   count7
 		   (+ count (quotient (- count4 count) 2))))
-		 ;;\needswork
+		 ;;\needswork: Can't use equal? to compare checkpoints because
+		 ;;            they contain continuations which contain
+		 ;;            procedures. Such procedures might not be eq?
+		 ;;            or equal? because the two copies of c are
+		 ;;            generated from different calls to
+		 ;;            il:apply/il:eval.
 		 (when #f
 		  (unless (equal? checkpoint5 (first value7))
 		   (internal-error "(not (equal? checkpoint5 (first value7)))"
@@ -1638,6 +1653,7 @@
 		(e (first result))
 		(bs (second result)))
 	  (il:eval (il:make-continuation
+		    11
 		    (lambda (value count limit)
 		     (write value)
 		     (newline)
@@ -1659,6 +1675,7 @@
 		(e (first result))
 		(bs (second result)))
 	  (il:eval (il:make-continuation
+		    12
 		    (lambda (value count limit)
 		     (write value)
 		     (newline)
