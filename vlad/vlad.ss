@@ -428,7 +428,14 @@
 	 (il:continuation? x-prime)
 	 ;; Can't check eq? on il:continuation-procedure because c and c` are
 	 ;; generated from different calls to il:apply/il:eval.
-	 (= (il:continuation-id x) (il:continuation-id x-prime)))
+	 ;;\needswork
+	 (or (and
+	      #t
+	      (or (= (il:continuation-id x) 9)
+		  (= (il:continuation-id x-prime) 9))
+	      (or (= (il:continuation-id x) 12)
+		  (= (il:continuation-id x-prime) 12)))
+	     (= (il:continuation-id x) (il:continuation-id x-prime))))
     (il:walk2! f (il:continuation-values x) (il:continuation-values x-prime)))
    ((and (il:checkpoint? x)
 	 (il:checkpoint? x-prime)
