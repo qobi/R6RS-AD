@@ -3,7 +3,7 @@
 (library
  (vlad)
  (export vlad vlad-I)
- (import (rnrs) (rnrs r5rs (6)))
+ (import (rnrs) (rnrs r5rs (6)) (ikarus))
 
  ;; All threading of path is for debugging.
 
@@ -665,26 +665,22 @@
        (lambda (y-reverse count limit path x-reverse y-sensitivity)
 	(for-each-dependent1!
 	 (lambda (y-reverse)
-	  (when (and (tape? y-reverse)
-		     (not (<_e (tape-epsilon y-reverse) *e*)))
+	  (when (and (tape? y-reverse) (not (<_e (tape-epsilon y-reverse) *e*)))
 	   (determine-fanout! y-reverse)))
 	 y-reverse)
 	(for-each-dependent1!
 	 (lambda (y-reverse)
-	  (when (and (tape? y-reverse)
-		     (not (<_e (tape-epsilon y-reverse) *e*)))
+	  (when (and (tape? y-reverse) (not (<_e (tape-epsilon y-reverse) *e*)))
 	   (initialize-sensitivity! y-reverse)))
 	 y-reverse)
 	(for-each-dependent1!
 	 (lambda (y-reverse)
-	  (when (and (tape? y-reverse)
-		     (not (<_e (tape-epsilon y-reverse) *e*)))
+	  (when (and (tape? y-reverse) (not (<_e (tape-epsilon y-reverse) *e*)))
 	   (determine-fanout! y-reverse)))
 	 y-reverse)
 	(for-each-dependent2!
 	 (lambda (y-reverse y-sensitivity)
-	  (when (and (tape? y-reverse)
-		     (not (<_e (tape-epsilon y-reverse) *e*)))
+	  (when (and (tape? y-reverse) (not (<_e (tape-epsilon y-reverse) *e*)))
 	   (reverse-phase! y-sensitivity y-reverse)))
 	 y-reverse
 	 y-sensitivity)
@@ -927,13 +923,31 @@
      ;;\needswork: The base case would nominally be triggered when
      ;;            count4-count=1 but this difference is to compensate for
      ;;            the fudge factors in the counts.
-     (if (<= (- count4 count) 6)
+     ;;            We changed this temporarily from 5, to 6, to 14.
+     (if (<= (- count4 count) 14)
 	 (begin
 	  (when *debugging?*
 	   (display "base case, path=")
 	   (write path)
 	   (newline))
-	  (il:*j continuation value1 value2 value3 count limit path4))
+	  ;;\needswork: This continuation can be eta converted when we remove
+	  ;;            the debugging printout.
+	  (il:*j (il:make-continuation
+		  15
+		  (lambda (value count limit path continuation)
+		   (when *debugging?*
+		    (display "finished base case, path=")
+		    (write path)
+		    (newline)
+		    (display "y=")
+		    (write (first value))
+		    (newline)
+		    (display "x`=")
+		    (write (second value))
+		    (newline))
+		   (il:call-continuation continuation value count limit path))
+		  continuation)
+		 value1 value2 value3 count limit path4))
 	 ;; 2. c=checkpoint(f,x,n)
 	 ;; f is value1
 	 ;; x is value2
@@ -992,7 +1006,7 @@
 	      ;; count6 and limit6, that at the end of step 3, are ignored.
 	      (when *debugging?*
 	       (display "finished step 3, path=")
-	       (write path6)
+	       (write path4)
 	       (newline)
 	       (display "y=")
 	       (write (first value6))
@@ -1002,7 +1016,7 @@
 	       (newline)
 	       (display
 		"starting step 4. (c,x`)=*j(\\x.checkpoint(f,x,n),x,c`), path=")
-	       (write path6)
+	       (write path4)
 	       (newline)
 	       (display "backing up count by 3")
 	       (newline))
@@ -1026,7 +1040,7 @@
 		 ;; except for consistency checking.
 		 (when *debugging?*
 		  (display "finished step 4, path=")
-		  (write path7)
+		  (write path4)
 		  (newline))
 		 (unless (= count7 (+ count (quotient (- count4 count) 2)))
 		  (internal-error
@@ -1039,7 +1053,7 @@
 				  (first value7)))
 		 (when *debugging?*
 		  (display "leaving il:checkpoint-*j, path=")
-		  (write path7)
+		  (write path4)
 		  (newline)
 		  (display "y=")
 		  (write (first value6))
@@ -1070,7 +1084,7 @@
 		 (make-il:variable-access-expression 'x)
 		 (make-il:binary-expression
 		  (lambda (continuation8 value8 value9 count8 limit8 path8)
-		   ;; continuation8 should be continuation7, the value of the
+		   ;; continuation8 should be continuation 11, the value of the
 		   ;; above il:make-continuation passed to il:checkpoint-*j
 		   ;; for step 4.
 		   (when *debugging?*
@@ -1225,13 +1239,6 @@
 
  (define (but-last x) (reverse (rest (reverse x))))
 
- (define *index* -1)
-
- (define (gensym)
-  (set! *index* (+ *index* 1))
-  ;;\needswork: These are interned.
-  (string->symbol (string-append "x" (number->string *index*))))
-
  (define (duplicatesq? xs)
   (and (not (null? xs))
        (or (memq (first xs) (rest xs)) (duplicatesq? (rest xs)))))
@@ -1273,10 +1280,10 @@
  (define (internal-error . message) (error #f "Internal error" message))
 
  (define (compile-time-error message . arguments)
-  (apply error #f message arguments))
+  (error #f (apply format message arguments)))
 
  (define (run-time-error message . arguments)
-  (apply error #f message arguments))
+  (error #f (apply format message arguments)))
 
  (define (has-extension? pathname)
   (let loop ((l (reverse (string->list pathname))))
