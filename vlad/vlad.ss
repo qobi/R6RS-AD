@@ -5,6 +5,8 @@
  (export vlad vlad-I)
  (import (rnrs) (rnrs r5rs (6)))
 
+ ;; All threading of path is for debugging.
+
  (define *debugging?* #t)
 
  (define *e* 0)
@@ -541,11 +543,12 @@
  (define (il:make-continuation id procedure . values)
   (make-il:continuation id procedure values))
 
- (define (il:call-continuation continuation value count limit)
+ (define (il:call-continuation continuation value count limit path)
   (apply (il:continuation-procedure continuation)
 	 value
 	 count
 	 limit
+	 path
 	 (il:continuation-values continuation)))
 
  (define (il:destructure parameter value)
@@ -568,7 +571,7 @@
 		  (il:binary-expression-expression2 parameter) (cdr value))))
 	(else (internal-error))))
 
- (define (il:apply continuation value1 value2 count limit)
+ (define (il:apply continuation value1 value2 count limit path)
   (cond
    ((il:nonrecursive-closure? value1)
     (il:eval continuation
@@ -581,7 +584,8 @@
 		      value2)
 		     (il:nonrecursive-closure-environment value1))
 	     count
-	     limit))
+	     limit
+	     path))
    ((il:recursive-closure? value1)
     (il:eval
      continuation
@@ -605,11 +609,13 @@
 			  (il:recursive-closure-variables value1))
 	     (il:recursive-closure-environment value1))
      count
-     limit))
+     limit
+     path))
    (else (run-time-error "Not a closure: ~s" value1))))
 
- (define (il:if-procedure continuation value1 value2 value3 count limit)
-  (il:call-continuation continuation (if value1 value2 value3) count limit))
+ (define (il:if-procedure continuation value1 value2 value3 count limit path)
+  (il:call-continuation
+   continuation (if value1 value2 value3) count limit path))
 
  (define (il:real value) value)
 
@@ -620,7 +626,7 @@
   (set! *e* (+ *e* 1))
   (f (il:make-continuation
       0
-      (lambda (y-forward count limit)
+      (lambda (y-forward count limit path)
        (set! *e* (- *e* 1))
        (il:call-continuation
 	continuation
@@ -637,7 +643,8 @@
 				  (dual-number-perturbation y-forward)))
 			     y-forward))
 	count
-	limit)))
+	limit
+	path)))
      (map-independent (lambda (x x-perturbation)
 		       (make-dual-number *e* x x-perturbation))
 		      x
@@ -655,7 +662,7 @@
   (let ((x-reverse (map-independent tapify x)))
    (f (il:make-continuation
        1
-       (lambda (y-reverse count limit x-reverse y-sensitivity)
+       (lambda (y-reverse count limit path x-reverse y-sensitivity)
 	(for-each-dependent1!
 	 (lambda (y-reverse)
 	  (when (and (tape? y-reverse)
@@ -694,32 +701,33 @@
 	    y-reverse)
 	   x-sensitivity)
 	  count
-	  limit)))
+	  limit
+	  path)))
        x-reverse
        y-sensitivity)
       x-reverse)))
 
- (define (il:j* continuation value1 value2 value3 count limit)
+ (define (il:j* continuation value1 value2 value3 count limit path)
   (forward-mode
    continuation
    il:walk2
    il:walk1
-   (lambda (continuation x) (il:apply continuation value1 x count limit))
+   (lambda (continuation x) (il:apply continuation value1 x count limit path))
    value2
    value3))
 
- (define (il:*j continuation value1 value2 value3 count limit)
+ (define (il:*j continuation value1 value2 value3 count limit path)
   (reverse-mode
    continuation
    il:walk1
    il:walk1
    il:walk1!
    il:walk2!
-   (lambda (continuation x) (il:apply continuation value1 x count limit))
+   (lambda (continuation x) (il:apply continuation value1 x count limit path))
    value2
    value3))
 
- (define (il:eval continuation expression environment count limit)
+ (define (il:eval continuation expression environment count limit path)
   ;; Every entry into il:eval increments count exactly once. So if you call
   ;; il:eval with count=0 and it doesn't checkpoint, continuation is called with
   ;; count=n being the total number of calls to (entries into) il:eval during
@@ -732,6 +740,8 @@
    (write count)
    (display ", limit=")
    (write limit)
+   (display ", path=")
+   (write path)
    (newline))
   (when (> count limit) (internal-error "(> count limit)" count limit))
   (if (= count limit)
@@ -741,87 +751,97 @@
 	(il:call-continuation continuation
 			      (il:constant-expression-value expression)
 			      (+ count 1)
-			      limit))
+			      limit
+			      path))
        ((il:variable-access-expression? expression)
 	(il:call-continuation
 	 continuation
 	 (il:lookup (il:variable-access-expression-variable expression)
 		    environment)
 	 (+ count 1)
-	 limit))
+	 limit
+	 path))
        ((il:lambda-expression? expression)
 	(il:call-continuation
 	 continuation
 	 ;;\needswork: Not safe for space.
 	 (make-il:nonrecursive-closure expression environment)
 	 (+ count 1)
-	 limit))
+	 limit
+	 path))
        ((il:unary-expression? expression)
 	(il:eval
 	 (il:make-continuation
 	  2
-	  (lambda (value count limit continuation)
+	  (lambda (value count limit path continuation)
 	   ((il:unary-expression-procedure expression)
-	    continuation value count limit))
+	    continuation value count limit path))
 	  continuation)
 	 (il:unary-expression-expression expression)
 	 environment
 	 (+ count 1)
-	 limit))
+	 limit
+	 path))
        ((il:binary-expression? expression)
 	(il:eval
 	 (il:make-continuation
 	  3
-	  (lambda (value1 count limit continuation)
+	  (lambda (value1 count limit path continuation)
 	   (il:eval
 	    (il:make-continuation
 	     4
-	     (lambda (value2 count limit continuation value1)
+	     (lambda (value2 count limit path continuation value1)
 	      ((il:binary-expression-procedure expression)
-	       continuation value1 value2 count limit))
+	       continuation value1 value2 count limit path))
 	     continuation
 	     value1)
 	    (il:binary-expression-expression2 expression)
 	    environment
 	    count
-	    limit))
+	    limit
+	    path))
 	  continuation)
 	 (il:binary-expression-expression1 expression)
 	 environment
 	 (+ count 1)
-	 limit))
+	 limit
+	 path))
        ((il:ternary-expression? expression)
 	(il:eval
 	 (il:make-continuation
 	  5
-	  (lambda (value1 count limit continuation)
+	  (lambda (value1 count limit path continuation)
 	   (il:eval
 	    (il:make-continuation
 	     6
-	     (lambda (value2 count limit continuation value1)
-	      (il:eval (il:make-continuation
-			7
-			(lambda (value3 count limit continuation value1 value2)
-			 ((il:ternary-expression-procedure expression)
-			  continuation value1 value2 value3 count limit))
-			continuation
-			value1
-			value2)
-		       (il:ternary-expression-expression3 expression)
-		       environment
-		       count
-		       limit))
+	     (lambda (value2 count limit path continuation value1)
+	      (il:eval
+	       (il:make-continuation
+		7
+		(lambda (value3 count limit path continuation value1 value2)
+		 ((il:ternary-expression-procedure expression)
+		  continuation value1 value2 value3 count limit path))
+		continuation
+		value1
+		value2)
+	       (il:ternary-expression-expression3 expression)
+	       environment
+	       count
+	       limit
+	       path))
 	     continuation
 	     value1)
 	    (il:ternary-expression-expression2 expression)
 	    environment
 	    count
-	    limit))
+	    limit
+	    path))
 	  continuation)
 	 (il:ternary-expression-expression1 expression)
 	 environment
 	 (+ count 1)
-	 limit))
+	 limit
+	 path))
        ((il:letrec-expression? expression)
 	(il:eval continuation
 		 (il:letrec-expression-expression expression)
@@ -838,10 +858,11 @@
 			       (il:letrec-expression-variables expression))
 		  environment)
 		 (+ count 1)
-		 limit))
+		 limit
+		 path))
        (else (internal-error)))))
 
- (define (il:checkpoint-*j continuation value1 value2 value3 count limit)
+ (define (il:checkpoint-*j continuation value1 value2 value3 count limit path)
   ;;\needswork: What happens when there is nesting? When there is no nesting,
   ;;            the input limit is infinity. So primops doesn't checkpoint. And
   ;;            resume doesn't checkpoint. But in a nested call, limit can be
@@ -862,7 +883,8 @@
   ;; y is value4
   ;; n is (quotient (- count4 count) 2)
   (when *debugging?*
-   (display "entering il:checkpoint-*j")
+   (display "entering il:checkpoint-*j, path=")
+   (write path)
    (newline)
    (display "f=")
    (write value1)
@@ -878,14 +900,16 @@
    (display ", limit=")
    (write limit)
    (newline)
-   (display "starting step 1. (y,2n)=primops(f,x)")
+   (display "starting step 1. (y,2n)=primops(f,x), path=")
+   (write path)
    (newline))
   (il:apply
    (il:make-continuation
     8
-    (lambda (value4 count4 limit4 continuation value1 value2 value3)
+    (lambda (value4 count4 limit4 path4 continuation value1 value2 value3)
      (when *debugging?*
-      (display "finished step 1")
+      (display "finished step 1, path=")
+      (write path)
       (newline)
       (display "steps=")
       (write (- count4 count))
@@ -906,9 +930,10 @@
      (if (<= (- count4 count) 6)
 	 (begin
 	  (when *debugging?*
-	   (display "base case")
+	   (display "base case, path=")
+	   (write path)
 	   (newline))
-	  (il:*j continuation value1 value2 value3 count limit))
+	  (il:*j continuation value1 value2 value3 count limit path4))
 	 ;; 2. c=checkpoint(f,x,n)
 	 ;; f is value1
 	 ;; x is value2
@@ -916,9 +941,11 @@
 	 ;; c is checkpoint5
 	 (begin
 	  (when *debugging?*
-	   (display "inductive case")
+	   (display "inductive case, path=")
+	   (write path4)
 	   (newline)
-	   (display "starting step 2. c=checkpoint(f,x,n)")
+	   (display "starting step 2. c=checkpoint(f,x,n), path=")
+	   (write path4)
 	   (newline))
 	  (let ((checkpoint5
 		 (il:apply
@@ -927,7 +954,7 @@
 		  ;; would have been called upon resume.
 		  (il:make-continuation
 		   9
-		   (lambda (value count limit)
+		   (lambda (value count limit path)
 		    (internal-error "Dummy continuation 9")))
 		  value1
 		  value2
@@ -936,11 +963,14 @@
 		  ;; then the evaluation could checkpoint right at the start
 		  ;; without making any progress. But that can't happen.
 		  count
-		  (+ count (quotient (- count4 count) 2)))))
+		  (+ count (quotient (- count4 count) 2))
+		  (append path4 '(left)))))
 	   (when *debugging?*
-	    (display "finished step 2")
+	    (display "finished step 2, path=")
+	    (write path4)
 	    (newline)
-	    (display "starting step 3. (y,c`)=*j(\\c.resume(c),c,y`)")
+	    (display "starting step 3. (y,c`)=*j(\\c.resume(c),c,y`), path=")
+	    (write path4)
 	    (newline)
 	    (display "backing up count by 2")
 	    (newline))
@@ -957,11 +987,12 @@
 	     10
 	     ;; This closes over value4 and checkpoint5 only for consistency
 	     ;; checking.
-	     (lambda (value6 count6 limit6 continuation value1 value2 value4
-			     checkpoint5)
+	     (lambda (value6 count6 limit6 path6
+			     continuation value1 value2 value4 checkpoint5)
 	      ;; count6 and limit6, that at the end of step 3, are ignored.
 	      (when *debugging?*
-	       (display "finished step 3")
+	       (display "finished step 3, path=")
+	       (write path6)
 	       (newline)
 	       (display "y=")
 	       (write (first value6))
@@ -970,7 +1001,8 @@
 	       (write (second value6))
 	       (newline)
 	       (display
-		"starting step 4. (c,x`)=*j(\\x.checkpoint(f,x,n),x,c`)")
+		"starting step 4. (c,x`)=*j(\\x.checkpoint(f,x,n),x,c`), path=")
+	       (write path6)
 	       (newline)
 	       (display "backing up count by 3")
 	       (newline))
@@ -988,11 +1020,13 @@
 	       (il:make-continuation
 		11
 		;; This closes over checkpoint5 only for consistency checking.
-		(lambda (value7 count7 limit7 continuation checkpoint5 value6)
+		(lambda (value7 count7 limit7 path7
+				continuation checkpoint5 value6)
 		 ;; count7 and limit7, that at the end of step 4, are ignored,
 		 ;; except for consistency checking.
 		 (when *debugging?*
-		  (display "finished step 4")
+		  (display "finished step 4, path=")
+		  (write path7)
 		  (newline))
 		 (unless (= count7 (+ count (quotient (- count4 count) 2)))
 		  (internal-error
@@ -1004,7 +1038,8 @@
 				  checkpoint5
 				  (first value7)))
 		 (when *debugging?*
-		  (display "leaving il:checkpoint-*j")
+		  (display "leaving il:checkpoint-*j, path=")
+		  (write path7)
 		  (newline)
 		  (display "y=")
 		  (write (first value6))
@@ -1024,7 +1059,8 @@
 		  ;; computed for primops, as if the entire computation
 		  ;; were done exactly once.
 		  count4
-		  limit4))
+		  limit4
+		  path7))
 		continuation
 		checkpoint5
 		value6)
@@ -1033,12 +1069,13 @@
 		(make-il:lambda-expression
 		 (make-il:variable-access-expression 'x)
 		 (make-il:binary-expression
-		  (lambda (continuation8 value8 value9 count8 limit8)
+		  (lambda (continuation8 value8 value9 count8 limit8 path8)
 		   ;; continuation8 should be continuation7, the value of the
 		   ;; above il:make-continuation passed to il:checkpoint-*j
 		   ;; for step 4.
 		   (when *debugging?*
-		    (display "starting checkpoint(f,x,n)")
+		    (display "starting checkpoint(f,x,n), path=")
+		    (write path8)
 		    (newline))
 		   (unless (= count8 count)
 		    (internal-error "(not (= count8 count))" count8 count))
@@ -1067,9 +1104,9 @@
 		    ;; dummy continuation 12 should never be called.
 		    (il:apply (il:make-continuation
 			       12
-			       (lambda (value count limit)
+			       (lambda (value count limit path)
 				(internal-error "Dummy continuation 12")))
-			      value8 value9 count8 limit8)
+			      value8 value9 count8 limit8 path)
 		    ;; These are the count and limit at the end of
 		    ;; checkpoint(f,x,n). Since this checkpoints, count9=limit9.
 		    ;; We fake this as the "count for second half" or
@@ -1080,7 +1117,8 @@
 		    ;; il:checkpoint-*j which first does step 1 and this
 		    ;; computes steps at the beginning.
 		    (+ count (quotient (- count4 count) 2))
-		    (+ count (quotient (- count4 count) 2))))
+		    (+ count (quotient (- count4 count) 2))
+		    path8))
 		  (make-il:variable-access-expression 'f)
 		  (make-il:variable-access-expression 'x)))
 		(list (make-il:binding 'f value1)))
@@ -1093,7 +1131,8 @@
 	       ;; The -3 is a fudge for the binary expression and the
 	       ;; variable access expressions f and x.
 	       (- count 3)
-	       (+ count (quotient (- count4 count) 2))))
+	       (+ count (quotient (- count4 count) 2))
+	       (append path4 '(left))))
 	     continuation
 	     value1
 	     value2
@@ -1104,9 +1143,10 @@
 	     (make-il:lambda-expression
 	      (make-il:variable-access-expression 'c)
 	      (make-il:unary-expression
-	       (lambda (continuation10 value10 count10 limit10)
+	       (lambda (continuation10 value10 count10 limit10 path10)
 		(when *debugging?*
-		 (display "starting resume(c)")
+		 (display "starting resume(c), path=")
+		 (write path10)
 		 (newline))
 		;;\needswork: Could eliminate (il:checkpoint-count value10).
 		(unless (= count10 (il:checkpoint-count value10))
@@ -1142,7 +1182,8 @@
 			 ;; These are the count and limit for the second half
 			 ;; of the computation.
 			 (il:checkpoint-count value10)
-			 limit10))
+			 limit10
+			 path10))
 	       (make-il:variable-access-expression 'c)))
 	     '())
 	    checkpoint5
@@ -1151,7 +1192,8 @@
 	    ;; computation. The -2 is a fudge for the unary expression and the
 	    ;; variable access expression c.
 	    (+ count (quotient (- count4 count) 2) -2)
-	    limit)))))
+	    limit
+	    (append path4 '(right)))))))
     continuation
     value1
     value2
@@ -1160,7 +1202,8 @@
    value2
    ;; These are the count and limit for the whole computation.
    count
-   limit))
+   limit
+   path))
 
  (define first car)
 
@@ -1548,8 +1591,8 @@
 
  (define (new-cons-expression e1 e2)
   (make-il:binary-expression
-   (lambda (continuation value1 value2 count limit)
-    (il:call-continuation continuation (cons value1 value2) count limit))
+   (lambda (continuation value1 value2 count limit path)
+    (il:call-continuation continuation (cons value1 value2) count limit path))
    e1
    e2))
 
@@ -1609,8 +1652,8 @@
     (make-il:lambda-expression
      (make-il:variable-access-expression 'x)
      (make-il:unary-expression
-      (lambda (continuation value count limit)
-       (il:call-continuation continuation (f value) count limit))
+      (lambda (continuation value count limit path)
+       (il:call-continuation continuation (f value) count limit path))
       (make-il:variable-access-expression 'x)))
     '())))
 
@@ -1623,8 +1666,8 @@
      (new-cons-expression (make-il:variable-access-expression 'x1)
 			  (make-il:variable-access-expression 'x2))
      (make-il:binary-expression
-      (lambda (continuation value1 value2 count limit)
-       (il:call-continuation continuation (f value1 value2) count limit))
+      (lambda (continuation value1 value2 count limit path)
+       (il:call-continuation continuation (f value1 value2) count limit path))
       (make-il:variable-access-expression 'x1)
       (make-il:variable-access-expression 'x2)))
     '())))
@@ -1689,14 +1732,15 @@
 		(bs (second result)))
 	  (il:eval (il:make-continuation
 		    13
-		    (lambda (value count limit)
+		    (lambda (value count limit path)
 		     (write value)
 		     (newline)
 		     (loop (rest es) ds)))
 		   e
 		   bs
 		   0
-		   (/ 1.0 0.0))))))))
+		   (/ 1.0 0.0)
+		   '())))))))
 
  (define (vlad-I include-directory pathname)
   (set! *include-path* (list include-directory))
@@ -1711,11 +1755,12 @@
 		(bs (second result)))
 	  (il:eval (il:make-continuation
 		    14
-		    (lambda (value count limit)
+		    (lambda (value count limit path)
 		     (write value)
 		     (newline)
 		     (loop (rest es) ds)))
 		   e
 		   bs
 		   0
-		   (/ 1.0 0.0)))))))))
+		   (/ 1.0 0.0)
+		   '()))))))))
