@@ -937,8 +937,8 @@
      ;;\needswork: The base case would nominally be triggered when
      ;;            count4-count=1 but this difference is to compensate for
      ;;            the fudge factors in the counts.
-     ;;            We changed this temporarily from 5, to 6, to 14.
-     (if (<= (- count4 count) 14)
+     ;;            We changed this temporarily from 5 to 9 to 10.
+     (if (<= (- count4 count) 9)
 	 (begin
 	  (when *debugging?*
 	   (display "base case, path=")
@@ -1108,6 +1108,7 @@
 		   (unless (= count8 count)
 		    (internal-error "(not (= count8 count))" count8 count))
 		   ;;\needswork: I don't know why this is tripped.
+		   ;;            This is tripped when (<= (- count4 count) 9).
 		   (when #f
 		    (unless (= limit8 (+ count (quotient (- count4 count) 2)))
 		     (internal-error
@@ -1117,9 +1118,9 @@
 		   ;; Because the call to checkpoint(f,x,n) returns and never
 		   ;; calls its continuation, we have to call the continuation
 		   ;; of step 4.
-		   ;;\needswork: Why does this error go away when I increase
+		   ;;\needswork: This error occurs for
 		   ;;            (<= (- count4 count) 5) to
-		   ;;            (<= (- count4 count) 6)?
+		   ;;            (<= (- count4 count) 9)?
 		   (when (or (= (il:continuation-id continuation8) 9)
 			     (= (il:continuation-id continuation8) 12))
 		    (internal-error "debugging" continuation8))
@@ -1200,6 +1201,7 @@
 				 (il:count-dummies
 				  (il:checkpoint-continuation value10))))
 		;;\needswork: I don't know why this is tripped.
+		;;            This is tripped when (<= (- count4 count) 9).
 		(when #f
 		 (unless (= limit10 limit)
 		  (internal-error "(not (= limit10 limit))" limit10 limit)))
