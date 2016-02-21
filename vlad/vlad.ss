@@ -285,9 +285,7 @@
 	(else (il:lookup variable (rest environment)))))
 
  (define (il:walk1 f x)
-  (cond ((eq? x 'continuation9) 'continuation9)
-	((eq? x 'continuation10) 'continuation10)
-	((eq? x #t) #t)
+  (cond ((eq? x #t) #t)
 	((eq? x #f) #f)
 	((null? x) '())
 	((dreal? x) (f x))
@@ -318,8 +316,6 @@
 
  (define (il:walk2 f x x-prime)
   (cond
-   ((and (eq? x 'continuation9) (eq? x-prime 'continuation9)) 'continuation9)
-   ((and (eq? x 'continuation10) (eq? x-prime 'continuation10)) 'continuation10)
    ((and (eq? x #t) (eq? x-prime #t)) #t)
    ((and (eq? x #f) (eq? x-prime #f)) #f)
    ((and (null? x) (null? x-prime)) '())
@@ -380,9 +376,7 @@
    (else (run-time-error "Values don't conform: ~s ~s" x x-prime))))
 
  (define (il:walk1! f x)
-  (cond ((eq? x 'continuation9) #f)
-	((eq? x 'continuation10) #f)
-	((eq? x #t) #f)
+  (cond ((eq? x #t) #f)
 	((eq? x #f) #f)
 	((null? x) #f)
 	((dreal? x) (f x))
@@ -400,13 +394,6 @@
 
  (define (il:walk2! f x x-prime)
   (cond
-   ;;\needswork
-   ((and #f
-	 (or (eq? x 'continuation9) (eq? x 'continuation10))
-	 (or (eq? x-prime 'continuation9) (eq? x-prime 'continuation10)))
-    #f)
-   ((and (eq? x 'continuation9) (eq? x-prime 'continuation9)) #f)
-   ((and (eq? x 'continuation10) (eq? x-prime 'continuation10)) #f)
    ((and (eq? x #t) (eq? x-prime #t)) #f)
    ((and (eq? x #f) (eq? x-prime #f)) #f)
    ((and (null? x) (null? x-prime)) #f)
@@ -452,9 +439,7 @@
    (else (run-time-error "Values don't conform: ~s ~s" x x-prime))))
 
  (define (il:count-dummies x)
-  (cond ((eq? x 'continuation9) 0)
-	((eq? x 'continuation10) 1)
-	((eq? x #t) 0)
+  (cond ((eq? x #t) 0)
 	((eq? x #f) 0)
 	((null? x) 0)
 	((dreal? x) 0)
@@ -465,7 +450,8 @@
 	((il:recursive-closure? x)
 	 (il:count-dummies (il:recursive-closure-environment x)))
 	((il:continuation? x)
-	 (il:count-dummies (il:continuation-values x)))
+	 (+ (if (= (il:continuation-id x) 9) 1 0)
+	    (il:count-dummies (il:continuation-values x))))
 	((il:checkpoint? x)
 	 (+ (il:count-dummies (il:checkpoint-continuation x))
 	    (il:count-dummies (il:checkpoint-environment x))))
@@ -473,8 +459,6 @@
 
  (define (il:replace-dummy c x)
   (cond
-   ((eq? x 'continuation9) x)
-   ((eq? x 'continuation10) c)
    ((eq? x #t) #t)
    ((eq? x #f) #f)
    ((null? x) '())
@@ -494,9 +478,11 @@
      (il:recursive-closure-index x)
      (il:replace-dummy c (il:recursive-closure-environment x))))
    ((il:continuation? x)
-    (make-il:continuation (il:continuation-id x)
-			  (il:continuation-procedure x)
-			  (il:replace-dummy c (il:continuation-values x))))
+    (if (= (il:continuation-id x) 9)
+	c
+	(make-il:continuation (il:continuation-id x)
+			      (il:continuation-procedure x)
+			      (il:replace-dummy c (il:continuation-values x)))))
    ((il:checkpoint? x)
     (make-il:checkpoint (il:replace-dummy c (il:checkpoint-continuation x))
 			(il:checkpoint-expression x)
@@ -506,8 +492,6 @@
 
  (define (il:equal? x x-prime)
   (or
-   (and (eq? x 'continuation9) (eq? x-prime 'continuation9))
-   (and (eq? x 'continuation10) (eq? x-prime 'continuation10))
    (and (eq? x #t) (eq? x-prime #t))
    (and (eq? x #f) (eq? x-prime #f))
    (and (null? x) (null? x-prime))
@@ -941,7 +925,10 @@
 		  ;; This continuation will be spliced out and never called.
 		  ;; It won't be called with the checkpoint computation but
 		  ;; would have been called upon resume.
-		  'continuation10
+		  (il:make-continuation
+		   9
+		   (lambda (value count limit)
+		    (internal-error "Dummy continuation 9")))
 		  value1
 		  value2
 		  ;; These are the count and limit for the first half of the
@@ -965,9 +952,9 @@
 	   (il:checkpoint-*j
 	    ;; This continuation will become continuation10. It would normally
 	    ;; not be called except that it is spliced in for the dummy
-	    ;; continuation10.
+	    ;; continuation 9.
 	    (il:make-continuation
-	     9
+	     10
 	     ;; This closes over value4 and checkpoint5 only for consistency
 	     ;; checking.
 	     (lambda (value6 count6 limit6 continuation value1 value2 value4
@@ -999,7 +986,7 @@
 			       (first value6)))
 	      (il:checkpoint-*j
 	       (il:make-continuation
-		10
+		11
 		;; This closes over checkpoint5 only for consistency checking.
 		(lambda (value7 count7 limit7 continuation checkpoint5 value6)
 		 ;; count7 and limit7, that at the end of step 4, are ignored,
@@ -1068,7 +1055,8 @@
 		   ;;\needswork: Why does this error go away when I increase
 		   ;;            (<= (- count4 count) 5) to
 		   ;;            (<= (- count4 count) 6)?
-		   (when (symbol? continuation8)
+		   (when (or (= (il:continuation-id continuation8) 9)
+			     (= (il:continuation-id continuation8) 12))
 		    (internal-error "debugging" continuation8))
 		   (il:call-continuation
 		    continuation8
@@ -1076,8 +1064,12 @@
 		    ;; always checkpoint. That means that it returns a
 		    ;; checkpoint and never calls its continuation. The
 		    ;; returned checkpoint should never be resumed. So the
-		    ;; dummy continuation9 should never be called.
-		    (il:apply 'continuation9 value8 value9 count8 limit8)
+		    ;; dummy continuation 12 should never be called.
+		    (il:apply (il:make-continuation
+			       12
+			       (lambda (value count limit)
+				(internal-error "Dummy continuation 12")))
+			      value8 value9 count8 limit8)
 		    ;; These are the count and limit at the end of
 		    ;; checkpoint(f,x,n). Since this checkpoints, count9=limit9.
 		    ;; We fake this as the "count for second half" or
@@ -1696,7 +1688,7 @@
 		(e (first result))
 		(bs (second result)))
 	  (il:eval (il:make-continuation
-		    11
+		    13
 		    (lambda (value count limit)
 		     (write value)
 		     (newline)
@@ -1718,7 +1710,7 @@
 		(e (first result))
 		(bs (second result)))
 	  (il:eval (il:make-continuation
-		    12
+		    14
 		    (lambda (value count limit)
 		     (write value)
 		     (newline)
