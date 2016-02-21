@@ -401,7 +401,8 @@
  (define (il:walk2! f x x-prime)
   (cond
    ;;\needswork
-   ((and (or (eq? x 'continuation9) (eq? x 'continuation10))
+   ((and #f
+	 (or (eq? x 'continuation9) (eq? x 'continuation10))
 	 (or (eq? x-prime 'continuation9) (eq? x-prime 'continuation10)))
     #f)
    ((and (eq? x 'continuation9) (eq? x-prime 'continuation9)) #f)
@@ -503,6 +504,53 @@
 			(il:checkpoint-count x)))
    (else (internal-error))))
 
+ (define (il:equal? x x-prime)
+  (or
+   (and (eq? x 'continuation9) (eq? x-prime 'continuation9))
+   (and (eq? x 'continuation10) (eq? x-prime 'continuation10))
+   (and (eq? x #t) (eq? x-prime #t))
+   (and (eq? x #f) (eq? x-prime #f))
+   (and (null? x) (null? x-prime))
+   (and (dreal? x) (dreal? x-prime) (d= x x-prime))
+   (and (pair? x)
+	(pair? x-prime)
+	(il:equal? (car x) (car x-prime))
+	(il:equal? (cdr x) (cdr x-prime)))
+   (and (il:binding? x)
+	(il:binding? x-prime)
+	(eq? (il:binding-variable x) (il:binding-variable x-prime))
+	(il:equal? (il:binding-value x) (il:binding-value x-prime)))
+   (and (il:nonrecursive-closure? x)
+	(il:nonrecursive-closure? x-prime)
+	(eq? (il:nonrecursive-closure-expression x)
+	     (il:nonrecursive-closure-expression x-prime))
+	(il:equal? (il:nonrecursive-closure-environment x)
+		   (il:nonrecursive-closure-environment x-prime)))
+   (and (il:recursive-closure? x)
+	(il:recursive-closure? x-prime)
+	(equal? (il:recursive-closure-variables x)
+		(il:recursive-closure-variables x-prime))
+	(equal? (il:recursive-closure-expressions x)
+		(il:recursive-closure-expressions x-prime))
+	(= (il:recursive-closure-index x)
+	   (il:recursive-closure-index x-prime))
+	(il:equal? (il:recursive-closure-environment x)
+		   (il:recursive-closure-environment x-prime)))
+   (and (il:continuation? x)
+	(il:continuation? x-prime)
+	;; Can't check eq? on il:continuation-procedure because c and c` are
+	;; generated from different calls to il:apply/il:eval.
+	(= (il:continuation-id x) (il:continuation-id x-prime))
+	(il:equal? (il:continuation-values x) (il:continuation-values x-prime)))
+   (and (il:checkpoint? x)
+	(il:checkpoint? x-prime)
+	(eq? (il:checkpoint-expression x) (il:checkpoint-expression x-prime))
+	(= (il:checkpoint-count x) (il:checkpoint-count x-prime))
+	(il:equal? (il:checkpoint-continuation x)
+		   (il:checkpoint-continuation x-prime))
+	(il:equal? (il:checkpoint-environment x)
+		   (il:checkpoint-environment x-prime)))))
+
  (define (il:closure? thing)
   (or (il:nonrecursive-closure? thing) (il:recursive-closure? thing)))
 
@@ -519,6 +567,8 @@
  (define (il:destructure parameter value)
   ;; removed lambda and letrec parameters
   (cond ((il:constant-expression? parameter)
+	 ;; This equal? is OK because a constant expression can't contain a
+	 ;; checkpoint or continuation.
 	 (unless (equal? (il:constant-expression-value parameter) value)
 	  (run-time-error "Argument is not an equivalent value for ~s: ~s"
 			  (il:constant-expression-value parameter)
@@ -943,8 +993,8 @@
 	      ;; c` is (second value6)
 	      ;; c is (first value7)
 	      ;; x` is (second value7)
-	      (unless (equal? value4 (first value6))
-	       (internal-error "(not (equal? value4 (first value6)))"
+	      (unless (il:equal? value4 (first value6))
+	       (internal-error "(not (il:equal? value4 (first value6)))"
 			       value4
 			       (first value6)))
 	      (il:checkpoint-*j
@@ -962,17 +1012,10 @@
 		   "(not (= count7 (+ count (quotient (- count4 count) 2))))"
 		   count7
 		   (+ count (quotient (- count4 count) 2))))
-		 ;;\needswork: Can't use equal? to compare checkpoints because
-		 ;;            they contain continuations which contain
-		 ;;            procedures. Such procedures might not be eq?
-		 ;;            or equal? because the two copies of c are
-		 ;;            generated from different calls to
-		 ;;            il:apply/il:eval.
-		 (when #f
-		  (unless (equal? checkpoint5 (first value7))
-		   (internal-error "(not (equal? checkpoint5 (first value7)))"
-				   checkpoint5
-				   (first value7))))
+		 (unless (il:equal? checkpoint5 (first value7))
+		  (internal-error "(not (il:equal? checkpoint5 (first value7)))"
+				  checkpoint5
+				  (first value7)))
 		 (when *debugging?*
 		  (display "leaving il:checkpoint-*j")
 		  (newline)
