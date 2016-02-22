@@ -938,7 +938,7 @@
      ;;            count4-count=1 but this difference is to compensate for
      ;;            the fudge factors in the counts.
      ;;            We changed this temporarily from 5 to 9 to 10.
-     (if (<= (- count4 count) 9)
+     (if (<= (- count4 count) 10)
 	 (begin
 	  (when *debugging?*
 	   (display "base case, path=")
