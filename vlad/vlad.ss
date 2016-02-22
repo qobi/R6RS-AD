@@ -682,22 +682,42 @@
 	  (when (and (tape? y-reverse) (not (<_e (tape-epsilon y-reverse) *e*)))
 	   (determine-fanout! y-reverse)))
 	 y-reverse)
+	(when *debugging?*
+	 (display "after determing-fanout!")
+	 (newline)
+	 (pretty-print y-reverse)
+	 (newline))
 	(for-each-dependent1!
 	 (lambda (y-reverse)
 	  (when (and (tape? y-reverse) (not (<_e (tape-epsilon y-reverse) *e*)))
 	   (initialize-sensitivity! y-reverse)))
 	 y-reverse)
+	(when *debugging?*
+	 (display "after initialize-sensitivity!")
+	 (newline)
+	 (pretty-print y-reverse)
+	 (newline))
 	(for-each-dependent1!
 	 (lambda (y-reverse)
 	  (when (and (tape? y-reverse) (not (<_e (tape-epsilon y-reverse) *e*)))
 	   (determine-fanout! y-reverse)))
 	 y-reverse)
+	(when *debugging?*
+	 (display "after determing-fanout!")
+	 (newline)
+	 (pretty-print y-reverse)
+	 (newline))
 	(for-each-dependent2!
 	 (lambda (y-reverse y-sensitivity)
 	  (when (and (tape? y-reverse) (not (<_e (tape-epsilon y-reverse) *e*)))
 	   (reverse-phase! y-sensitivity y-reverse)))
 	 y-reverse
 	 y-sensitivity)
+	(when *debugging?*
+	 (display "after reverse-phase!")
+	 (newline)
+	 (pretty-print y-reverse)
+	 (newline))
 	(let ((x-sensitivity (map-independent tape-sensitivity x-reverse)))
 	 (set! *e* (- *e* 1))
 	 (il:call-continuation
