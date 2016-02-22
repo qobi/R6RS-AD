@@ -1224,7 +1224,7 @@
 			       12
 			       (lambda (value environment count limit path)
 				(internal-error "Dummy continuation 12")))
-			      value8 value9 environment8 count8 limit8 path)
+			      value8 value9 environment8 count8 limit8 path8)
 		    environment8
 		    ;; These are the count and limit at the end of
 		    ;; checkpoint(f,x,n). Since this checkpoints, count9=limit9.
