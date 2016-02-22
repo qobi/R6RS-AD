@@ -280,6 +280,53 @@
 ;;; j* and *j are implemented as ternary expressions with il:j* and il:*j as the
 ;;; procedure.
 
+ (define (il:externalize-expression expression)
+  (cond
+   ((il:constant-expression? expression)
+    (il:constant-expression-value expression))
+   ((il:variable-access-expression? expression)
+    (il:variable-access-expression-variable expression))
+   ((il:lambda-expression? expression)
+    `(lambda (,(il:externalize-expression
+		(il:lambda-expression-parameter expression)))
+      ,(il:externalize-expression
+	(il:lambda-expression-expression expression))))
+   ((il:unary-expression? expression)
+    `(,(il:unary-expression-procedure expression)
+      ,(il:externalize-expression (il:unary-expression-expression expression))))
+   ((il:binary-expression? expression)
+    (cond ((eq? (il:binary-expression-procedure expression) il:apply)
+	   `(,(il:externalize-expression
+	       (il:binary-expression-expression1 expression))
+	     ,(il:externalize-expression
+	       (il:binary-expression-expression2 expression))))
+	  ((eq? (il:binary-expression-procedure expression) il:cons)
+	   `(cons ,(il:externalize-expression
+		    (il:binary-expression-expression1 expression))
+		  ,(il:externalize-expression
+		    (il:binary-expression-expression2 expression))))
+	  (else `(,(il:binary-expression-procedure expression)
+		  ,(il:externalize-expression
+		    (il:binary-expression-expression1 expression))
+		  ,(il:externalize-expression
+		    (il:binary-expression-expression2 expression))))))
+   ((il:ternary-expression? expression)
+    `(,(il:ternary-expression-procedure expression)
+      ,(il:externalize-expression
+	(il:ternary-expression-expression1 expression))
+      ,(il:externalize-expression
+	(il:ternary-expression-expression2 expression))
+      ,(il:externalize-expression
+	(il:ternary-expression-expression3 expression))))
+   ((il:letrec-expression? expression)
+    `(letrec ,(map (lambda (variable expression)
+		    `(,variable ,(il:externalize-expression expression)))
+		   (il:letrec-expression-variables expression)
+		   (il:letrec-expression-expressions expression))
+      ,(il:externalize-expression
+	(il:letrec-expression-expression expression))))
+   (else (internal-error))))
+
  (define (il:lookup variable environment)
   (cond ((null? environment) (internal-error))
 	((eq? variable (il:binding-variable (first environment)))
@@ -772,6 +819,8 @@
    (write limit)
    (display ", path=")
    (write path)
+   (newline)
+   (pretty-print (il:externalize-expression expression))
    (newline))
   (when (> count limit) (internal-error "(> count limit)" count limit))
   (if (= count limit)
@@ -1632,12 +1681,10 @@
 	     (else (loop (macro-expand e) xs))))))
     (else (compile-time-error "Invalid expression: ~s" e)))))
 
- (define (new-cons-expression e1 e2)
-  (make-il:binary-expression
-   (lambda (continuation value1 value2 count limit path)
-    (il:call-continuation continuation (cons value1 value2) count limit path))
-   e1
-   e2))
+ (define (il:cons continuation value1 value2 count limit path)
+  (il:call-continuation continuation (cons value1 value2) count limit path))
+
+ (define (new-cons-expression e1 e2) (make-il:binary-expression il:cons e1 e2))
 
  (define (internalize-expression e)
   (cond
