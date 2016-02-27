@@ -1022,7 +1022,7 @@
      ;;            count4-count=1 but this difference is to compensate for
      ;;            the fudge factors in the counts.
      ;;            We changed this temporarily from 5 to 9 to 10.
-     (if (<= (- count4 count) 10)
+     (if (<= (- count4 count) 9)
 	 (begin
 	  (when *debugging?*
 	   (display "base case, path=")
@@ -1196,48 +1196,44 @@
 		    (newline))
 		   (unless (= count8 count)
 		    (internal-error "(not (= count8 count))" count8 count))
-		   ;;\needswork: I don't know why this is tripped.
-		   ;;            This is tripped when (<= (- count4 count) 9).
-		   (when #f
-		    (unless (= limit8 (+ count (quotient (- count4 count) 2)))
-		     (internal-error
-		      "(not (= limit8 (+ count (quotient (- count4 count) 2))))"
-		      limit8
-		      (+ count (quotient (- count4 count) 2)))))
 		   ;; Because the call to checkpoint(f,x,n) returns and never
 		   ;; calls its continuation, we have to call the continuation
 		   ;; of step 4.
-		   ;;\needswork: This error occurs for
-		   ;;            (<= (- count4 count) 5) to
-		   ;;            (<= (- count4 count) 9)?
-		   (when (or (= (il:continuation-id continuation8) 9)
-			     (= (il:continuation-id continuation8) 12))
-		    (internal-error "debugging" continuation8))
-		   (il:call-continuation
-		    continuation8
-		    ;; Since this is a call to checkpoint(f,x,n), it will
-		    ;; always checkpoint. That means that it returns a
-		    ;; checkpoint and never calls its continuation. The
-		    ;; returned checkpoint should never be resumed. So the
-		    ;; dummy continuation 12 should never be called.
-		    (il:apply (il:make-continuation
-			       12
-			       (lambda (value environment count limit path)
-				(internal-error "Dummy continuation 12")))
-			      value8 value9 environment8 count8 limit8 path8)
-		    environment8
-		    ;; These are the count and limit at the end of
-		    ;; checkpoint(f,x,n). Since this checkpoints, count9=limit9.
-		    ;; We fake this as the "count for second half" or
-		    ;; equivalently the "limit for the first half". These
-		    ;; should ultimately be passed to count7 and limit7 which
-		    ;; are ignored. We can't pass dummies because the call to
-		    ;; \x.checkpoint(f,x,n) is wrapped in a call to
-		    ;; il:checkpoint-*j which first does step 1 and this
-		    ;; computes steps at the beginning.
-		    (+ count (quotient (- count4 count) 2))
-		    (+ count (quotient (- count4 count) 2))
-		    path8))
+		   (let ((checkpoint27
+			  ;; Since this is a call to checkpoint(f,x,n), it will
+			  ;; always checkpoint. That means that it returns a
+			  ;; checkpoint and never calls its continuation. The
+			  ;; returned checkpoint should never be resumed. So the
+			  ;; dummy continuation 12 should never be called.
+			  (il:apply
+			   (il:make-continuation
+			    12
+			    (lambda (value environment count limit path)
+			     (internal-error "Dummy continuation 12")))
+			   value8 value9 environment8 count8 limit8 path8)))
+		    (when *debugging?*
+		     (when (= (il:continuation-id continuation8) 9)
+		      (display
+		       "k=k9, returning instead of calling continuation")
+		      (newline)))
+		    (if (= (il:continuation-id continuation8) 9)
+			checkpoint27
+			(il:call-continuation
+			 continuation8
+			 checkpoint27
+			 environment8
+			 ;; These are the count and limit at the end of
+			 ;; checkpoint(f,x,n). Since this checkpoints, count9=limit9.
+			 ;; We fake this as the "count for second half" or
+			 ;; equivalently the "limit for the first half". These
+			 ;; should ultimately be passed to count7 and limit7 which
+			 ;; are ignored. We can't pass dummies because the call to
+			 ;; \x.checkpoint(f,x,n) is wrapped in a call to
+			 ;; il:checkpoint-*j which first does step 1 and this
+			 ;; computes steps at the beginning.
+			 (+ count (quotient (- count4 count) 2))
+			 (+ count (quotient (- count4 count) 2))
+			 path8))))
 		  (make-il:variable-access-expression 'f)
 		  (make-il:variable-access-expression 'x)))
 		(list (make-il:binding 'f value1)))
@@ -1287,17 +1283,13 @@
 		  "(not (= (il:checkpoint-count value10) (+ count (quotient (- count4 count) 2))))"
 		  (il:checkpoint-count value10)
 		  (+ count (quotient (- count4 count) 2))))
-		(unless (= (il:count-dummies
-			    (il:checkpoint-continuation value10))
-			   1)
-		 (internal-error "The number of dummies is not one"
-				 (il:count-dummies
-				  (il:checkpoint-continuation value10))))
-		;;\needswork: I don't know why this is tripped.
-		;;            This is tripped when (<= (- count4 count) 9).
 		(when #f
-		 (unless (= limit10 limit)
-		  (internal-error "(not (= limit10 limit))" limit10 limit)))
+		 (unless (= (il:count-dummies
+			     (il:checkpoint-continuation value10))
+			    1)
+		  (internal-error "The number of dummies is not one"
+				  (il:count-dummies
+				   (il:checkpoint-continuation value10)))))
 		(il:eval (il:replace-dummy
 			  continuation10 (il:checkpoint-continuation value10))
 			 (il:checkpoint-expression value10)
@@ -1328,7 +1320,8 @@
    ;; These are the count and limit for the whole computation.
    count
    limit
-   path))
+   path)
+  (internal-error "call to primops checkpointed"))
 
  (define first car)
 
