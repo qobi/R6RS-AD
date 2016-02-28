@@ -738,38 +738,22 @@
 	  (when (and (tape? y-reverse) (not (<_e (tape-epsilon y-reverse) *e*)))
 	   (determine-fanout! y-reverse)))
 	 y-reverse)
-	(when *debugging?*
-	 (display "after determing-fanout!")
-	 (newline)
-	 (pretty-print y-reverse))
 	(for-each-dependent1!
 	 (lambda (y-reverse)
 	  (when (and (tape? y-reverse) (not (<_e (tape-epsilon y-reverse) *e*)))
 	   (initialize-sensitivity! y-reverse)))
 	 y-reverse)
-	(when *debugging?*
-	 (display "after initialize-sensitivity!")
-	 (newline)
-	 (pretty-print y-reverse))
 	(for-each-dependent1!
 	 (lambda (y-reverse)
 	  (when (and (tape? y-reverse) (not (<_e (tape-epsilon y-reverse) *e*)))
 	   (determine-fanout! y-reverse)))
 	 y-reverse)
-	(when *debugging?*
-	 (display "after determing-fanout!")
-	 (newline)
-	 (pretty-print y-reverse))
 	(for-each-dependent2!
 	 (lambda (y-reverse y-sensitivity)
 	  (when (and (tape? y-reverse) (not (<_e (tape-epsilon y-reverse) *e*)))
 	   (reverse-phase! y-sensitivity y-reverse)))
 	 y-reverse
 	 y-sensitivity)
-	(when *debugging?*
-	 (display "after reverse-phase!")
-	 (newline)
-	 (pretty-print y-reverse))
 	(let ((x-sensitivity (map-independent tape-sensitivity x-reverse)))
 	 (set! *e* (- *e* 1))
 	 (il:call-continuation
@@ -790,6 +774,94 @@
        y-sensitivity)
       x-reverse)))
 
+ (define (reverse-mode-for-base-case-of-checkpoint-*j continuation
+						      map-independent
+						      map-dependent
+						      for-each-dependent1!
+						      for-each-dependent2!
+						      f
+						      x
+						      y-sensitivity)
+  ;; This is a special version of reverse-mode that handles the case where f
+  ;; checkpoints.
+  (set! *e* (+ *e* 1))
+  (let ((x-reverse (map-independent tapify x)))
+   (let* ((continuation
+	   (il:make-continuation
+	    1
+	    (lambda (y-reverse environment count limit path
+			       x-reverse y-sensitivity)
+	     (for-each-dependent1!
+	      (lambda (y-reverse)
+	       (when (and (tape? y-reverse)
+			  (not (<_e (tape-epsilon y-reverse) *e*)))
+		(determine-fanout! y-reverse)))
+	      y-reverse)
+	     (when *debugging?*
+	      (display "after determing-fanout!")
+	      (newline)
+	      (pretty-print y-reverse))
+	     (for-each-dependent1!
+	      (lambda (y-reverse)
+	       (when (and (tape? y-reverse)
+			  (not (<_e (tape-epsilon y-reverse) *e*)))
+		(initialize-sensitivity! y-reverse)))
+	      y-reverse)
+	     (when *debugging?*
+	      (display "after initialize-sensitivity!")
+	      (newline)
+	      (pretty-print y-reverse))
+	     (for-each-dependent1!
+	      (lambda (y-reverse)
+	       (when (and (tape? y-reverse)
+			  (not (<_e (tape-epsilon y-reverse) *e*)))
+		(determine-fanout! y-reverse)))
+	      y-reverse)
+	     (when *debugging?*
+	      (display "after determing-fanout!")
+	      (newline)
+	      (pretty-print y-reverse))
+	     (for-each-dependent2!
+	      (lambda (y-reverse y-sensitivity)
+	       (when (and (tape? y-reverse)
+			  (not (<_e (tape-epsilon y-reverse) *e*)))
+		(reverse-phase! y-sensitivity y-reverse)))
+	      y-reverse
+	      y-sensitivity)
+	     (when *debugging?*
+	      (display "after reverse-phase!")
+	      (newline)
+	      (pretty-print y-reverse))
+	     (let ((x-sensitivity (map-independent tape-sensitivity x-reverse)))
+	      (set! *e* (- *e* 1))
+	      (il:call-continuation
+	       continuation
+	       (list
+		(map-dependent
+		 (lambda (y-reverse)
+		  (if (or (not (tape? y-reverse))
+			  (<_e (tape-epsilon y-reverse) *e*))
+		      y-reverse
+		      (tape-primal y-reverse)))
+		 y-reverse)
+		x-sensitivity)
+	       environment
+	       count
+	       limit
+	       path)))
+	    x-reverse
+	    y-sensitivity))
+	  (checkpoint (f continuation x-reverse)))
+    (il:call-continuation continuation
+			  checkpoint
+			  environment
+			  ;; I think these are never used.
+			  'count
+			  'limit
+			  'path)
+    (internal-error
+     "reverse-mode-for-base-case-of-checkpoint-*j continuation checkpointed"))))
+
  (define (il:j* continuation value1 value2 value3 environment count limit path)
   (forward-mode
    continuation
@@ -802,6 +874,19 @@
 
  (define (il:*j continuation value1 value2 value3 environment count limit path)
   (reverse-mode
+   continuation
+   il:walk1
+   il:walk1
+   il:walk1!
+   il:walk2!
+   (lambda (continuation x)
+    (il:apply continuation value1 x environment count limit path))
+   value2
+   value3))
+
+ (define (il:base-case-of-checkpoint-*j
+	  continuation value1 value2 value3 environment count limit path)
+  (reverse-mode-for-base-case-of-checkpoint-*j
    continuation
    il:walk1
    il:walk1
@@ -1031,24 +1116,25 @@
 	       (newline))
 	      ;;\needswork: This continuation can be eta converted when we
 	      ;;            remove the debugging printout.
-	      (il:*j (il:make-continuation
-		      15
-		      (lambda (value environment count limit path continuation)
-		       (when *debugging?*
-			(display "finished base case, path=")
-			(write path)
-			(newline)
-			(display "y=")
-			(write (first value))
-			(newline)
-			(display "x`=")
-			(write (second value))
-			(newline))
-		       (il:call-continuation
-			continuation value environment count limit path)
-		       (internal-error "base case continuation checkpointed"))
-		      continuation)
-		     value1 value2 value3 environment4 count limit path4)
+	      (il:base-case-of-checkpoint-*j
+	       (il:make-continuation
+		15
+		(lambda (value environment count limit path continuation)
+		 (when *debugging?*
+		  (display "finished base case, path=")
+		  (write path)
+		  (newline)
+		  (display "y=")
+		  (write (first value))
+		  (newline)
+		  (display "x`=")
+		  (write (second value))
+		  (newline))
+		 (il:call-continuation
+		  continuation value environment count limit path)
+		 (internal-error "base case continuation checkpointed"))
+		continuation)
+	       value1 value2 value3 environment4 count limit path4)
 	      (internal-error "base case checkpointed"))
 	     (else
 	      ;; 2. c=checkpoint(f,x,n)
