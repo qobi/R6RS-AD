@@ -1305,7 +1305,8 @@
 		      limit10
 		      path10)
 	     ;;\needswork: I'm not sure whether this is OK or not.
-	     (when #f (internal-error "resume(c) checkpointed")))
+	     ;;(internal-error "resume(c) checkpointed")
+	     )
 	    (make-il:variable-access-expression 'c)))
 	  '())
 	 checkpoint5
