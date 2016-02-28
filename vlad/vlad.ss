@@ -11,8 +11,8 @@
 
  ;;\needswork: The base case would nominally be triggered when count4-count=1
  ;;            but this difference is to compensate for the fudge factors in
- ;;            the counts. We changed this temporarily from 5 to 9 to 10.
- (define *base-case-duration* 9)
+ ;;            the counts.
+ (define *base-case-duration* 6)
 
  (define *e* 0)
 
@@ -499,24 +499,25 @@
      f (il:checkpoint-environment x) (il:checkpoint-environment x-prime)))
    (else (run-time-error "Values don't conform: ~s ~s" x x-prime))))
 
- (define (il:count-dummies x)
-  (cond ((eq? x #t) 0)
-	((eq? x #f) 0)
-	((null? x) 0)
-	((dreal? x) 0)
-	((pair? x) (+ (il:count-dummies (car x)) (il:count-dummies (cdr x))))
-	((il:binding? x) (il:count-dummies (il:binding-value x)))
-	((il:nonrecursive-closure? x)
-	 (il:count-dummies (il:nonrecursive-closure-environment x)))
-	((il:recursive-closure? x)
-	 (il:count-dummies (il:recursive-closure-environment x)))
-	((il:continuation? x)
-	 (+ (if (= (il:continuation-id x) 9) 1 0)
-	    (il:count-dummies (il:continuation-values x))))
-	((il:checkpoint? x)
-	 (+ (il:count-dummies (il:checkpoint-continuation x))
-	    (il:count-dummies (il:checkpoint-environment x))))
-	(else (internal-error))))
+ (define (il:count-dummies id x)
+  (cond
+   ((eq? x #t) 0)
+   ((eq? x #f) 0)
+   ((null? x) 0)
+   ((dreal? x) 0)
+   ((pair? x) (+ (il:count-dummies id (car x)) (il:count-dummies id (cdr x))))
+   ((il:binding? x) (il:count-dummies id (il:binding-value x)))
+   ((il:nonrecursive-closure? x)
+    (il:count-dummies id (il:nonrecursive-closure-environment x)))
+   ((il:recursive-closure? x)
+    (il:count-dummies id (il:recursive-closure-environment x)))
+   ((il:continuation? x)
+    (+ (if (= (il:continuation-id x) 9) 1 0)
+       (il:count-dummies id (il:continuation-values x))))
+   ((il:checkpoint? x)
+    (+ (il:count-dummies id (il:checkpoint-continuation x))
+       (il:count-dummies id (il:checkpoint-environment x))))
+   (else (internal-error))))
 
  (define (il:replace-dummy c x)
   (cond
@@ -1069,6 +1070,11 @@
    (display "entering il:checkpoint-*j, path=")
    (write path)
    (newline)
+   (display "dummies9=")
+   (write (il:count-dummies 9 continuation))
+   (display ", dummies12=")
+   (write (il:count-dummies 12 continuation))
+   (newline)
    (display "f=")
    (write value1)
    (newline)
@@ -1310,7 +1316,13 @@
 			  (display
 			   "k=k9, returning instead of calling continuation")
 			  (newline)))
-			(if (= (il:continuation-id continuation8) 9)
+			(when *debugging?*
+			 (when (= (il:continuation-id continuation8) 12)
+			  (display
+			   "k=k12, returning instead of calling continuation")
+			  (newline)))
+			(if (or (= (il:continuation-id continuation8) 9)
+				(= (il:continuation-id continuation8) 12))
 			    checkpoint27
 			    ;;\needswork: We don't give an error if this
 			    ;;            checkpoints.
@@ -1382,13 +1394,15 @@
 		      "(not (= (il:checkpoint-count value10) (+ count (quotient (- count4 count) 2))))"
 		      (il:checkpoint-count value10)
 		      (+ count (quotient (- count4 count) 2))))
-		    (when #f
-		     (unless (= (il:count-dummies
+		    ;;\needswork: I don't know how there can be zero dummies.
+		    (unless (<= (il:count-dummies
+				 9
 				 (il:checkpoint-continuation value10))
 				1)
-		      (internal-error "The number of dummies is not one"
-				      (il:count-dummies
-				       (il:checkpoint-continuation value10)))))
+		     (internal-error "More than one dummy"
+				     (il:count-dummies
+				      9
+				      (il:checkpoint-continuation value10))))
 		    (il:eval (il:replace-dummy
 			      continuation10
 			      (il:checkpoint-continuation value10))
