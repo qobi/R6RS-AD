@@ -7,12 +7,12 @@
 
  ;; All threading of path is for debugging.
 
- (define *debugging?* #f)
+ (define *debugging?* #t)
 
  ;;\needswork: The base case would nominally be triggered when count4-count=1
  ;;            but this difference is to compensate for the fudge factors in
  ;;            the counts.
- (define *base-case-duration* 6)
+ (define *base-case-duration* 10)
 
  (define *e* 0)
 
@@ -1165,9 +1165,11 @@
 		  (write (second value))
 		  (newline))
 		 (il:call-continuation
+		  ;;\needswork: To call with entry environment.
 		  continuation value environment count limit path)
 		 (internal-error "base case continuation checkpointed"))
 		continuation)
+	       ;;\needswork: To call with entry environment.
 	       value1 value2 value3 environment4 count limit path4)
 	      (internal-error "base case checkpointed"))
 	     (else
@@ -1194,6 +1196,7 @@
 			(internal-error "Dummy continuation 9")))
 		      value1
 		      value2
+		      ;;\needswork: To call with entry environment.
 		      environment4
 		      ;; These are the count and limit for the first half of the
 		      ;; computation. If (zero? (quotient (- count4 count) 2))
@@ -1296,6 +1299,7 @@
 		     (il:call-continuation
 		      continuation
 		      (list (first value6) (second value7))
+		      ;;\needswork: To call with entry environment.
 		      environment4
 		      ;; This fakes the count and limit to be the same as
 		      ;; computed for primops, as if the entire computation
@@ -1338,6 +1342,7 @@
 				12
 				(lambda (value environment count limit path)
 				 (internal-error "Dummy continuation 12")))
+			       ;;\needswork: To call with entry environment.
 			       value8 value9 environment8 count8 limit8 path8)))
 			(when *debugging?*
 			 (when (= (il:continuation-id continuation8) 9)
@@ -1357,6 +1362,7 @@
 			    (il:call-continuation
 			     continuation8
 			     checkpoint27
+			     ;;\needswork: To call with entry environment.
 			     environment8
 			     ;; These are the count and limit at the end of
 			     ;; checkpoint(f,x,n). Since this checkpoints,
@@ -1377,6 +1383,7 @@
 		    (list (make-il:binding 'f value1)))
 		   value2
 		   (second value6)
+		   ;;\needswork: To call with entry environment.
 		   environment4
 		   ;; These are the count and limit for the first half of the
 		   ;; computation. If (zero? (quotient (- count4 count) 2))
@@ -1448,6 +1455,7 @@
 		 '())
 		checkpoint5
 		value3
+		;;\needswork: To call with entry environment.
 		environment4
 		;; These are the count and limit for the second half of the
 		;; computation. The -2 is a fudge for the unary expression and
@@ -1983,7 +1991,7 @@
 	(make-unary-primitive 'real il:real)
 	(make-unary-primitive 'write-real il:write-real)
 	(make-ternary-primitive 'j* il:j*)
-	(make-ternary-primitive '*j il:*j)
+	(make-ternary-primitive '*j il:checkpoint-*j)
 	(make-ternary-primitive 'checkpoint-*j il:checkpoint-*j)))
 
  (define (vlad pathname)
