@@ -7,7 +7,7 @@
 
  ;; All threading of path is for debugging.
 
- (define *debugging?* #t)
+ (define *debugging?* #f)
 
  ;;\needswork: The base case would nominally be triggered when count4-count=1
  ;;            but this difference is to compensate for the fudge factors in
@@ -640,10 +640,16 @@
 	(else (internal-error))))
 
  (define (il:apply continuation value1 value2 environment count limit path)
-  ;; environment is ignored
   (cond
    ((il:nonrecursive-closure? value1)
-    (il:eval continuation
+    (il:eval (il:make-continuation
+	      16
+	      (lambda (value environment1 count limit path
+			     continuation environment)
+	       (il:call-continuation
+		continuation value environment count limit path))
+	      continuation
+	      environment)
 	     (il:lambda-expression-expression
 	      (il:nonrecursive-closure-expression value1))
 	     ;;\needswork: Not safe for space.
@@ -657,7 +663,14 @@
 	     path))
    ((il:recursive-closure? value1)
     (il:eval
-     continuation
+     (il:make-continuation
+      17
+      (lambda (value environment1 count limit path
+		     continuation environment)
+       (il:call-continuation
+	continuation value environment count limit path))
+      continuation
+      environment)
      (il:lambda-expression-expression
       (list-ref (il:recursive-closure-expressions value1)
 		(il:recursive-closure-index value1)))
@@ -789,7 +802,7 @@
   (let ((x-reverse (map-independent tapify x)))
    (let* ((continuation
 	   (il:make-continuation
-	    1
+	    18
 	    (lambda (y-reverse environment count limit path
 			       x-reverse y-sensitivity)
 	     (for-each-dependent1!
@@ -865,7 +878,12 @@
 
  (define (il:j* continuation value1 value2 value3 environment count limit path)
   (forward-mode
-   continuation
+   (il:make-continuation
+    19
+    (lambda (value environment1 count limit path continuation environment)
+     (il:call-continuation continuation value environment count limit path))
+    continuation
+    environment)
    il:walk2
    il:walk1
    (lambda (continuation x)
@@ -875,7 +893,12 @@
 
  (define (il:*j continuation value1 value2 value3 environment count limit path)
   (reverse-mode
-   continuation
+   (il:make-continuation
+    20
+    (lambda (value environment1 count limit path continuation environment)
+     (il:call-continuation continuation value environment count limit path))
+    continuation
+    environment)
    il:walk1
    il:walk1
    il:walk1!
@@ -888,7 +911,12 @@
  (define (il:base-case-of-checkpoint-*j
 	  continuation value1 value2 value3 environment count limit path)
   (reverse-mode-for-base-case-of-checkpoint-*j
-   continuation
+   (il:make-continuation
+    21
+    (lambda (value environment1 count limit path continuation environment)
+     (il:call-continuation continuation value environment count limit path))
+    continuation
+    environment)
    il:walk1
    il:walk1
    il:walk1!
