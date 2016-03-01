@@ -7,7 +7,7 @@
 
  ;; All threading of path is for debugging.
 
- (define *debugging?* #f)
+ (define *debugging?* #t)
 
  ;;\needswork: The base case would nominally be triggered when count4-count=1
  ;;            but this difference is to compensate for the fudge factors in
@@ -368,6 +368,7 @@
 	(else (il:lookup variable (rest environment)))))
 
  (define (il:walk1 f x)
+  ;;\needswork: Not safe for space.
   (cond ((eq? x #t) #t)
 	((eq? x #f) #f)
 	((null? x) '())
@@ -398,6 +399,7 @@
 	(else (internal-error))))
 
  (define (il:walk2 f x x-prime)
+  ;;\needswork: Not safe for space.
   (cond
    ((and (eq? x #t) (eq? x-prime #t)) #t)
    ((and (eq? x #f) (eq? x-prime #f)) #f)
@@ -549,6 +551,7 @@
    (else (internal-error))))
 
  (define (il:replace-dummy c x)
+  ;;\needswork: Not safe for space.
   (cond
    ((eq? x #t) #t)
    ((eq? x #f) #f)
@@ -825,7 +828,7 @@
 	     (when *debugging?*
 	      (display "after determing-fanout!")
 	      (newline)
-	      (pretty-print y-reverse))
+	      (pretty-print (il:externalize y-reverse)))
 	     (for-each-dependent1!
 	      (lambda (y-reverse)
 	       (when (and (tape? y-reverse)
@@ -835,7 +838,7 @@
 	     (when *debugging?*
 	      (display "after initialize-sensitivity!")
 	      (newline)
-	      (pretty-print y-reverse))
+	      (pretty-print (il:externalize y-reverse)))
 	     (for-each-dependent1!
 	      (lambda (y-reverse)
 	       (when (and (tape? y-reverse)
@@ -845,7 +848,12 @@
 	     (when *debugging?*
 	      (display "after determing-fanout!")
 	      (newline)
-	      (pretty-print y-reverse))
+	      (pretty-print (il:externalize y-reverse)))
+	     (begin
+	      (display "debugging")
+	      (newline)
+	      (pretty-print (il:externalize y-sensitivity))
+	      (pretty-print (il:externalize y-reverse)))
 	     (for-each-dependent2!
 	      (lambda (y-reverse y-sensitivity)
 	       (when (and (tape? y-reverse)
@@ -856,7 +864,7 @@
 	     (when *debugging?*
 	      (display "after reverse-phase!")
 	      (newline)
-	      (pretty-print y-reverse))
+	      (pretty-print (il:externalize y-reverse)))
 	     (let ((x-sensitivity (map-independent tape-sensitivity x-reverse)))
 	      (set! *e* (- *e* 1))
 	      (il:call-continuation
@@ -1395,14 +1403,15 @@
 		      (il:checkpoint-count value10)
 		      (+ count (quotient (- count4 count) 2))))
 		    ;;\needswork: I don't know how there can be zero dummies.
-		    (unless (<= (il:count-dummies
-				 9
-				 (il:checkpoint-continuation value10))
-				1)
-		     (internal-error "More than one dummy"
-				     (il:count-dummies
-				      9
-				      (il:checkpoint-continuation value10))))
+		    (when #f
+		     (unless (<= (il:count-dummies
+				  9
+				  (il:checkpoint-continuation value10))
+				 1)
+		      (internal-error "More than one dummy"
+				      (il:count-dummies
+				       9
+				       (il:checkpoint-continuation value10)))))
 		    (il:eval (il:replace-dummy
 			      continuation10
 			      (il:checkpoint-continuation value10))
