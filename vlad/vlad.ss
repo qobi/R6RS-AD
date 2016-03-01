@@ -7,7 +7,7 @@
 
  ;; All threading of path is for debugging.
 
- (define *debugging?* #t)
+ (define *debugging?* #f)
 
  ;;\needswork: The base case would nominally be triggered when count4-count=1
  ;;            but this difference is to compensate for the fudge factors in
@@ -388,9 +388,14 @@
 	  (il:recursive-closure-index x)
 	  (il:walk1 f (il:recursive-closure-environment x))))
 	((il:continuation? x)
-	 (make-il:continuation (il:continuation-id x)
-			       (il:continuation-procedure x)
-			       (il:walk1 f (il:continuation-values x))))
+	 (if (= (il:continuation-id x) 9)
+	     ;;\needswork: This still breaks eq? for continuation9 because if
+	     ;;            you il:walk2 then il:walk1 to extract x-prime you
+	     ;;            get back x which is equal? but not eq?
+	     x
+	     (make-il:continuation (il:continuation-id x)
+				   (il:continuation-procedure x)
+				   (il:walk1 f (il:continuation-values x)))))
 	((il:checkpoint? x)
 	 (make-il:checkpoint (il:walk1 f (il:checkpoint-continuation x))
 			     (il:checkpoint-expression x)
@@ -441,11 +446,17 @@
 	 ;; Can't check eq? on il:continuation-procedure because c and c` are
 	 ;; generated from different calls to il:apply/il:eval.
 	 (= (il:continuation-id x) (il:continuation-id x-prime)))
-    (make-il:continuation
-     (il:continuation-id x)
-     ;; Use the one from x, not x-prime.
-     (il:continuation-procedure x)
-     (il:walk2 f (il:continuation-values x) (il:continuation-values x-prime))))
+    (if (= (il:continuation-id x) 9)
+	;;\needswork: This still breaks eq? for continuation9 because if you
+	;;            il:walk2 then il:walk1 to extract x-prime you get back x
+	;;            which is equal? but not eq?
+	x
+	(make-il:continuation
+	 (il:continuation-id x)
+	 ;; Use the one from x, not x-prime.
+	 (il:continuation-procedure x)
+	 (il:walk2
+	  f (il:continuation-values x) (il:continuation-values x-prime)))))
    ((and (il:checkpoint? x)
 	 (il:checkpoint? x-prime)
 	 (eq? (il:checkpoint-expression x) (il:checkpoint-expression x-prime))
@@ -530,57 +541,58 @@
      f (il:checkpoint-environment x) (il:checkpoint-environment x-prime)))
    (else (run-time-error "Values don't conform: ~s ~s" x x-prime))))
 
- (define (il:count-dummies id x)
+ (define (il:count-dummies c x)
   (cond
    ((eq? x #t) 0)
    ((eq? x #f) 0)
    ((null? x) 0)
    ((dreal? x) 0)
-   ((pair? x) (+ (il:count-dummies id (car x)) (il:count-dummies id (cdr x))))
-   ((il:binding? x) (il:count-dummies id (il:binding-value x)))
+   ((pair? x) (+ (il:count-dummies c (car x)) (il:count-dummies c (cdr x))))
+   ((il:binding? x) (il:count-dummies c (il:binding-value x)))
    ((il:nonrecursive-closure? x)
-    (il:count-dummies id (il:nonrecursive-closure-environment x)))
+    (il:count-dummies c (il:nonrecursive-closure-environment x)))
    ((il:recursive-closure? x)
-    (il:count-dummies id (il:recursive-closure-environment x)))
+    (il:count-dummies c (il:recursive-closure-environment x)))
    ((il:continuation? x)
-    (+ (if (= (il:continuation-id x) 9) 1 0)
-       (il:count-dummies id (il:continuation-values x))))
+    (+ (if (eq? x c) 1 0) (il:count-dummies c (il:continuation-values x))))
    ((il:checkpoint? x)
-    (+ (il:count-dummies id (il:checkpoint-continuation x))
-       (il:count-dummies id (il:checkpoint-environment x))))
+    (+ (il:count-dummies c (il:checkpoint-continuation x))
+       (il:count-dummies c (il:checkpoint-environment x))))
    (else (internal-error))))
 
- (define (il:replace-dummy c x)
+ (define (il:replace-dummy c1 c2 x)
   ;;\needswork: Not safe for space.
   (cond
    ((eq? x #t) #t)
    ((eq? x #f) #f)
    ((null? x) '())
    ((dreal? x) x)
-   ((pair? x) (cons (il:replace-dummy c (car x)) (il:replace-dummy c (cdr x))))
+   ((pair? x)
+    (cons (il:replace-dummy c1 c2 (car x)) (il:replace-dummy c1 c2 (cdr x))))
    ((il:binding? x)
     (make-il:binding (il:binding-variable x)
-		     (il:replace-dummy c (il:binding-value x))))
+		     (il:replace-dummy c1 c2 (il:binding-value x))))
    ((il:nonrecursive-closure? x)
     (make-il:nonrecursive-closure
      (il:nonrecursive-closure-expression x)
-     (il:replace-dummy c (il:nonrecursive-closure-environment x))))
+     (il:replace-dummy c1 c2 (il:nonrecursive-closure-environment x))))
    ((il:recursive-closure? x)
     (make-il:recursive-closure
      (il:recursive-closure-variables x)
      (il:recursive-closure-expressions x)
      (il:recursive-closure-index x)
-     (il:replace-dummy c (il:recursive-closure-environment x))))
+     (il:replace-dummy c1 c2 (il:recursive-closure-environment x))))
    ((il:continuation? x)
-    (if (= (il:continuation-id x) 9)
-	c
-	(make-il:continuation (il:continuation-id x)
-			      (il:continuation-procedure x)
-			      (il:replace-dummy c (il:continuation-values x)))))
+    (cond ((eq? x c1) c2)
+	  ((= (il:continuation-id x) 9) x)
+	  (else (make-il:continuation
+		 (il:continuation-id x)
+		 (il:continuation-procedure x)
+		 (il:replace-dummy c1 c2 (il:continuation-values x))))))
    ((il:checkpoint? x)
-    (make-il:checkpoint (il:replace-dummy c (il:checkpoint-continuation x))
+    (make-il:checkpoint (il:replace-dummy c1 c2 (il:checkpoint-continuation x))
 			(il:checkpoint-expression x)
-			(il:replace-dummy c (il:checkpoint-environment x))
+			(il:replace-dummy c1 c2 (il:checkpoint-environment x))
 			(il:checkpoint-count x)))
    (else (internal-error))))
 
@@ -849,11 +861,6 @@
 	      (display "after determing-fanout!")
 	      (newline)
 	      (pretty-print (il:externalize y-reverse)))
-	     (begin
-	      (display "debugging")
-	      (newline)
-	      (pretty-print (il:externalize y-sensitivity))
-	      (pretty-print (il:externalize y-reverse)))
 	     (for-each-dependent2!
 	      (lambda (y-reverse y-sensitivity)
 	       (when (and (tape? y-reverse)
@@ -1091,11 +1098,6 @@
    (display "entering il:checkpoint-*j, path=")
    (write path)
    (newline)
-   (display "dummies9=")
-   (write (il:count-dummies 9 continuation))
-   (display ", dummies12=")
-   (write (il:count-dummies 12 continuation))
-   (newline)
    (display "f=")
    (pretty-print (il:externalize value1))
    (display "x=")
@@ -1172,24 +1174,28 @@
 	       (display "starting step 2. c=checkpoint(f,x,n), path=")
 	       (write path4)
 	       (newline))
-	      (let ((checkpoint5
-		     (il:apply
+	      (let* ((continuation9
 		      ;; This continuation will be spliced out and never called.
 		      ;; It won't be called with the checkpoint computation but
 		      ;; would have been called upon resume.
 		      (il:make-continuation
 		       9
 		       (lambda (value count limit path)
-			(internal-error "Dummy continuation 9")))
-		      value1
-		      value2
-		      ;; These are the count and limit for the first half of the
-		      ;; computation. If (zero? (quotient (- count4 count) 2))
-		      ;; then the evaluation could checkpoint right at the start
-		      ;; without making any progress. But that can't happen.
-		      count
-		      (+ count (quotient (- count4 count) 2))
-		      (append path4 '(left)))))
+			(internal-error "Dummy continuation 9"))))
+		     (checkpoint5
+		      (il:apply
+		       continuation9
+		       value1
+		       value2
+		       ;; These are the count and limit for the first half of
+		       ;; the computation. If
+		       ;; (zero? (quotient (- count4 count) 2))
+		       ;; then the evaluation could checkpoint right at the
+		       ;; start without making any progress. But that can't
+		       ;; happen.
+		       count
+		       (+ count (quotient (- count4 count) 2))
+		       (append path4 '(left)))))
 	       (when *debugging?*
 		(display "finished step 2, path=")
 		(write path4)
@@ -1380,6 +1386,7 @@
 		 (make-il:lambda-expression
 		  (make-il:variable-access-expression 'c)
 		  (make-il:unary-expression
+		   ;;\needswork: Should this close over continuation9?
 		   (lambda (continuation10 value10 count10 limit10 path10)
 		    ;;\needswork: Could eliminate (il:checkpoint-count value10).
 		    (when *debugging?*
@@ -1403,16 +1410,19 @@
 		      (il:checkpoint-count value10)
 		      (+ count (quotient (- count4 count) 2))))
 		    ;;\needswork: I don't know how there can be zero dummies.
+		    ;; It might be that there can be more than one dummy due
+		    ;; to not-safe-for-space structure sharing that is broken.
 		    (when #f
 		     (unless (<= (il:count-dummies
-				  9
+				  continuation9
 				  (il:checkpoint-continuation value10))
 				 1)
 		      (internal-error "More than one dummy"
 				      (il:count-dummies
-				       9
+				       continuation9
 				       (il:checkpoint-continuation value10)))))
 		    (il:eval (il:replace-dummy
+			      continuation9
 			      continuation10
 			      (il:checkpoint-continuation value10))
 			     (il:checkpoint-expression value10)
