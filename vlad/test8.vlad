@@ -1,0 +1,3 @@
+(define (cadr (list x y)) y)
+
+(j* (lambda (x) (cadr (checkpoint-*j (lambda (x) (* 3 (* x x))) x 1))) 1 1)
