@@ -1,0 +1,71 @@
+#!/bin/bash
+./old-vlad test1
+./old-vlad test2
+./old-vlad test3
+./old-vlad test4
+./old-vlad test5
+./old-vlad test6
+./old-vlad test7
+./old-vlad test8
+
+./old-vlad-I examples/forward examples/forward/factorial
+./old-vlad-I examples/forward examples/forward/even-odd
+./old-vlad-I examples/forward examples/forward/bug4
+./old-vlad-I examples/forward examples/forward/example-forward
+./old-vlad-I examples/forward examples/forward/prefix
+./old-vlad-I examples/forward examples/forward/sqrt
+./old-vlad-I examples/forward examples/forward/triple
+./old-vlad-I examples/forward examples/forward/hessian
+./old-vlad-I examples/forward examples/forward/dn
+./old-vlad-I examples/forward examples/forward/marble
+
+./old-vlad-I examples/interpreter examples/interpreter/factorial
+./old-vlad-I examples/interpreter examples/interpreter/even-odd
+./old-vlad-I examples/interpreter examples/interpreter/bug-a
+./old-vlad-I examples/interpreter examples/interpreter/bug-b
+./old-vlad-I examples/interpreter examples/interpreter/bug-c
+./old-vlad-I examples/interpreter examples/interpreter/bug0
+./old-vlad-I examples/interpreter examples/interpreter/bug1
+./old-vlad-I examples/interpreter examples/interpreter/bug2
+./old-vlad-I examples/interpreter examples/interpreter/bug3
+./old-vlad-I examples/interpreter examples/interpreter/bug4
+./old-vlad-I examples/interpreter examples/interpreter/example
+./old-vlad-I examples/interpreter examples/interpreter/example-forward
+./old-vlad-I examples/interpreter examples/interpreter/prefix
+./old-vlad-I examples/interpreter examples/interpreter/sqrt
+./old-vlad-I examples/interpreter examples/interpreter/triple
+#./old-vlad-I examples/interpreter examples/interpreter/hessian
+
+./old-vlad-I examples/ad2008 examples/ad2008/cannon-F
+./old-vlad-I examples/ad2008 examples/ad2008/cannon-R
+./old-vlad-I examples/ad2008 examples/ad2008/cannon1000-F
+./old-vlad-I examples/ad2008 examples/ad2008/cannon1000-R
+
+./old-vlad-I examples/backprop examples/backprop/backprop-F
+./old-vlad-I examples/backprop examples/backprop/backprop-R
+
+./old-vlad-I examples/popl2009-lots-real examples/popl2009-lots-real/series-tail-F
+./old-vlad-I examples/popl2009-lots-real examples/popl2009-lots-real/series-tail-R
+./old-vlad-I examples/popl2009-lots-real examples/popl2009-lots-real/nr-sqrt-F
+./old-vlad-I examples/popl2009-lots-real examples/popl2009-lots-real/nr-sqrt-R
+./old-vlad-I examples/popl2009-lots-real examples/popl2009-lots-real/series-FF
+./old-vlad-I examples/popl2009-lots-real examples/popl2009-lots-real/series-FR
+./old-vlad-I examples/popl2009-lots-real examples/popl2009-lots-real/series-RF
+./old-vlad-I examples/popl2009-lots-real examples/popl2009-lots-real/series-RR
+./old-vlad-I examples/popl2009-lots-real examples/popl2009-lots-real/nr-sqrt-FF
+./old-vlad-I examples/popl2009-lots-real examples/popl2009-lots-real/nr-sqrt-FR
+./old-vlad-I examples/popl2009-lots-real examples/popl2009-lots-real/nr-sqrt-RF
+./old-vlad-I examples/popl2009-lots-real examples/popl2009-lots-real/nr-sqrt-RR
+./old-vlad-I examples/popl2009-lots-real examples/popl2009-lots-real/saddle-FF-stalingrad1000
+./old-vlad-I examples/popl2009-lots-real examples/popl2009-lots-real/saddle-FR-stalingrad1000
+./old-vlad-I examples/popl2009-lots-real examples/popl2009-lots-real/saddle-RF-stalingrad1000
+./old-vlad-I examples/popl2009-lots-real examples/popl2009-lots-real/saddle-RR-stalingrad1000
+./old-vlad-I examples/popl2009-lots-real examples/popl2009-lots-real/particle-FF-stalingrad1000
+./old-vlad-I examples/popl2009-lots-real examples/popl2009-lots-real/particle-FR-stalingrad1000
+./old-vlad-I examples/popl2009-lots-real examples/popl2009-lots-real/particle-RF-stalingrad1000
+./old-vlad-I examples/popl2009-lots-real examples/popl2009-lots-real/particle-RR-stalingrad1000
+
+./old-vlad-I examples/probabilistic-programming examples/probabilistic-programming/probabilistic-lambda-calculus-F
+./old-vlad-I examples/probabilistic-programming examples/probabilistic-programming/probabilistic-lambda-calculus-R
+./old-vlad-I examples/probabilistic-programming examples/probabilistic-programming/probabilistic-prolog-F
+./old-vlad-I examples/probabilistic-programming examples/probabilistic-programming/probabilistic-prolog-R
