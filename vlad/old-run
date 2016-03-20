@@ -7,6 +7,9 @@
 ./old-vlad test6
 ./old-vlad test7
 ./old-vlad test8
+./old-vlad test9
+./old-vlad test10
+./old-vlad test11
 
 ./old-vlad-I examples/forward examples/forward/factorial
 ./old-vlad-I examples/forward examples/forward/even-odd

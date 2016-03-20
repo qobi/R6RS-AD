@@ -12,7 +12,7 @@
 
  ;; All threading of path is for debugging.
 
- (define *debugging?* #t)
+ (define *debugging?* #f)
 
  ;;\needswork: The base case would nominally be triggered when count8-count=1
  ;;            but this difference is to compensate for the fudge factors in
@@ -834,11 +834,6 @@
 	  (when (and (tape? y-reverse) (not (<_e (tape-epsilon y-reverse) *e*)))
 	   (determine-fanout! y-reverse)))
 	 y-reverse)
-	(begin
-	 (display "y-sensitivity=")
-	 (pretty-print (il:externalize y-sensitivity))
-	 (display "y-reverse=")
-	 (pretty-print (il:externalize y-reverse)))
 	(for-each-dependent2!
 	 (lambda (y-reverse y-sensitivity)
 	  (when (and (tape? y-reverse) (not (<_e (tape-epsilon y-reverse) *e*)))
