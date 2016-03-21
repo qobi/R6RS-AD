@@ -7,12 +7,12 @@
 
  ;; All threading of path is for debugging.
 
- (define *debugging?* #f)
+ (define *debugging?* #t)
 
  ;;\needswork: The base case would nominally be triggered when count4-count=1
  ;;            but this difference is to compensate for the fudge factors in
  ;;            the counts.
- (define *base-case-duration* 6)
+ (define *base-case-duration* 7)
 
  (define *e* 0)
 
@@ -281,8 +281,10 @@
 
  (define-record-type il:continuation (fields id procedure values))
 
+ (define *id* 0)
+
  (define-record-type il:checkpoint
-  (fields continuation expression environment count))
+  (fields id continuation expression environment count))
 
 ;;; Short-circuit if is implemented with syntax that wraps with lambda and a
 ;;; ternary expression that implements applicative-order if.
@@ -410,7 +412,8 @@
 				   (il:continuation-procedure x)
 				   (il:walk1 f (il:continuation-values x)))))
 	((il:checkpoint? x)
-	 (make-il:checkpoint (il:walk1 f (il:checkpoint-continuation x))
+	 (make-il:checkpoint (il:checkpoint-id x)
+			     (il:walk1 f (il:checkpoint-continuation x))
 			     (il:checkpoint-expression x)
 			     (il:walk1 f (il:checkpoint-environment x))
 			     (il:checkpoint-count x)))
@@ -474,7 +477,8 @@
 	 (il:checkpoint? x-prime)
 	 (eq? (il:checkpoint-expression x) (il:checkpoint-expression x-prime))
 	 (= (il:checkpoint-count x) (il:checkpoint-count x-prime)))
-    (make-il:checkpoint (il:walk2 f
+    (make-il:checkpoint (il:checkpoint-id x)
+			(il:walk2 f
 				  (il:checkpoint-continuation x)
 				  (il:checkpoint-continuation x-prime))
 			(il:checkpoint-expression x)
@@ -603,7 +607,8 @@
 		 (il:continuation-procedure x)
 		 (il:replace-dummy c1 c2 (il:continuation-values x))))))
    ((il:checkpoint? x)
-    (make-il:checkpoint (il:replace-dummy c1 c2 (il:checkpoint-continuation x))
+    (make-il:checkpoint (il:checkpoint-id x)
+			(il:replace-dummy c1 c2 (il:checkpoint-continuation x))
 			(il:checkpoint-expression x)
 			(il:replace-dummy c1 c2 (il:checkpoint-environment x))
 			(il:checkpoint-count x)))
@@ -985,7 +990,15 @@
   (let ((environment (il:restrict environment expression)))
    (cond
     ((= count limit)
-     (make-il:checkpoint continuation expression environment count))
+     ;; here I am
+     (set! *id* (+ *id* 1))
+     (begin
+      (display "making checkpoint, count=")
+      (write count)
+      (display ", id=")
+      (write *id*)
+      (newline))
+     (make-il:checkpoint *id* continuation expression environment count))
     ((il:constant-expression? expression)
      (il:call-continuation continuation
 			   (il:constant-expression-value expression)
@@ -1170,7 +1183,7 @@
 	    (cond
 	     ((<= (- count4 count) *base-case-duration*)
 	      (when *debugging?*
-	       (display "base case, path=")
+	       (display "starting base case, path=")
 	       (write (append path '(0)))
 	       (newline))
 	      ;;\needswork: This continuation can be eta converted when we
@@ -1365,6 +1378,11 @@
 				(lambda (value count limit path)
 				 (internal-error "Dummy continuation 12")))
 			       value8 value9 count8 limit8 path8)))
+			;; here I am
+			(begin
+			 (display "(il:continuation-id continuation)=")
+			 (write (il:continuation-id continuation8))
+			 (newline))
 			(when *debugging?*
 			 (when (= (il:continuation-id continuation8) 9)
 			  (display
@@ -1431,6 +1449,15 @@
 		     (display "starting resume(c), path=")
 		     (write path10)
 		     (newline))
+		    ;; here I am
+		    (begin
+		     (display "id=")
+		     (write (il:checkpoint-id value10))
+		     (display ", counts=")
+		     (write (list count10
+				  (il:checkpoint-count value10)
+				  (+ count (quotient (- count4 count) 2))))
+		     (newline))
 		    (unless (= count10 (il:checkpoint-count value10))
 		     (internal-error
 		      "(not (= count10 (il:checkpoint-count value10)))"
@@ -1450,15 +1477,16 @@
 		    ;;\needswork: I don't know how there can be zero dummies.
 		    ;; It might be that there can be more than one dummy due
 		    ;; to not-safe-for-space structure sharing that is broken.
-		    (when #f
-		     (unless (<= (il:count-dummies
-				  continuation9
-				  (il:checkpoint-continuation value10))
-				 1)
-		      (internal-error "More than one dummy"
-				      (il:count-dummies
-				       continuation9
-				       (il:checkpoint-continuation value10)))))
+		    (unless (<= (il:count-dummies
+				 continuation9
+				 (il:checkpoint-continuation value10))
+				1)
+		     (internal-error "More than one dummy"
+				     (il:count-dummies
+				      continuation9
+				      (il:checkpoint-continuation value10))))
+		    ;; This can return when resume(c) checkpoints which can
+		    ;; happen when step 3 is called from step 4.
 		    (il:eval (il:replace-dummy
 			      continuation9
 			      continuation10
@@ -1469,10 +1497,7 @@
 			     ;; half of the computation.
 			     (il:checkpoint-count value10)
 			     limit10
-			     path10)
-		    ;;\needswork: I'm not sure whether this is OK or not.
-		    ;;(internal-error "resume(c) checkpointed")
-		    )
+			     path10))
 		   (make-il:variable-access-expression 'c)))
 		 '())
 		checkpoint5

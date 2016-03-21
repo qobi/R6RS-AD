@@ -1,9 +1,8 @@
 #!r6rs
 
 ;;; To do
-;;;  1. count, limit, and path need to be nestable
-;;;  2. handlers part of continuations need to be nestable
-;;;  3. replace *e*
+;;;  1. counts, limits, paths, and handlers need to be nestable
+;;;  2. replace *e*
 
 (library
  (vlad)
@@ -12,12 +11,12 @@
 
  ;; All threading of path is for debugging.
 
- (define *debugging?* #f)
+ (define *debugging?* #t)
 
  ;;\needswork: The base case would nominally be triggered when count8-count=1
  ;;            but this difference is to compensate for the fudge factors in
  ;;            the counts.
- (define *base-case-duration* 10)
+ (define *base-case-duration* 7)
 
  (define *e* 0)
 
@@ -286,8 +285,10 @@
 
  (define-record-type il:continuation (fields id procedure values))
 
+ (define *id* 0)
+
  (define-record-type il:checkpoint
-  (fields continuation expression environment count))
+  (fields id continuation expression environment count))
 
 ;;; Short-circuit if is implemented with syntax that wraps with lambda and a
 ;;; ternary expression that implements applicative-order if.
@@ -415,7 +416,8 @@
 				   (il:continuation-procedure x)
 				   (il:walk1 f (il:continuation-values x)))))
 	((il:checkpoint? x)
-	 (make-il:checkpoint (il:walk1 f (il:checkpoint-continuation x))
+	 (make-il:checkpoint (il:checkpoint-id x)
+			     (il:walk1 f (il:checkpoint-continuation x))
 			     (il:checkpoint-expression x)
 			     (il:walk1 f (il:checkpoint-environment x))
 			     (il:checkpoint-count x)))
@@ -479,7 +481,8 @@
 	 (il:checkpoint? x-prime)
 	 (eq? (il:checkpoint-expression x) (il:checkpoint-expression x-prime))
 	 (= (il:checkpoint-count x) (il:checkpoint-count x-prime)))
-    (make-il:checkpoint (il:walk2 f
+    (make-il:checkpoint (il:checkpoint-id x)
+			(il:walk2 f
 				  (il:checkpoint-continuation x)
 				  (il:checkpoint-continuation x-prime))
 			(il:checkpoint-expression x)
@@ -608,7 +611,8 @@
 		 (il:continuation-procedure x)
 		 (il:replace-dummy c1 c2 (il:continuation-values x))))))
    ((il:checkpoint? x)
-    (make-il:checkpoint (il:replace-dummy c1 c2 (il:checkpoint-continuation x))
+    (make-il:checkpoint (il:checkpoint-id x)
+			(il:replace-dummy c1 c2 (il:checkpoint-continuation x))
 			(il:checkpoint-expression x)
 			(il:replace-dummy c1 c2 (il:checkpoint-environment x))
 			(il:checkpoint-count x)))
@@ -718,7 +722,6 @@
 		  handler
 		  (il:lambda-expression-expression
 		   (il:nonrecursive-closure-expression value1))
-		  ;;\needswork: Not safe for space.
 		  (append (il:destructure
 			   (il:lambda-expression-parameter
 			    (il:nonrecursive-closure-expression value1))
@@ -736,7 +739,6 @@
 	  (il:lambda-expression-expression
 	   (list-ref (il:recursive-closure-expressions value1)
 		     (il:recursive-closure-index value1)))
-	  ;;\needswork: Not safe for space.
 	  (append (il:destructure
 		   (il:lambda-expression-parameter
 		    (list-ref (il:recursive-closure-expressions value1)
@@ -939,167 +941,175 @@
    (write limit)
    (display ", path=")
    (write path)
+   (display ", handler id=")
+   (write (il:continuation-id handler))
    (newline)
    (pretty-print (il:externalize-expression expression)))
   (when (> count limit) (internal-error "(> count limit)" count limit))
-  (cond
-   ((= count limit)
-    (il:raise
-     handler (make-il:checkpoint continuation expression environment count))
-    ;;(internal-error "il:eval returned A")
-    )
-   ((il:constant-expression? expression)
-    (il:continue continuation
-		 (il:constant-expression-value expression)
-		 (+ count 1)
-		 limit
-		 path)
-    ;;(internal-error "il:eval returned B")
-    )
-   ((il:variable-access-expression? expression)
-    (il:continue continuation
-		 (il:lookup (il:variable-access-expression-variable expression)
-			    environment)
-		 (+ count 1)
-		 limit
-		 path)
-    ;;(internal-error "il:eval returned C")
-    )
-   ((il:lambda-expression? expression)
-    ;;\needswork: Not safe for space.
-    (il:continue continuation
-		 (make-il:nonrecursive-closure expression environment)
-		 (+ count 1)
-		 limit
-		 path)
-    ;;(internal-error "il:eval returned D")
-    )
-   ((il:unary-expression? expression)
-    (il:eval (il:make-continuation
-	      2
-	      ;; We don't close over handler.
-	      (lambda (value count limit path continuation)
-	       ((il:unary-expression-procedure expression)
-		continuation handler value count limit path)
-	       ;;(internal-error "il:eval returned E")
-	       )
-	      continuation)
-	     handler
-	     (il:unary-expression-expression expression)
-	     environment
-	     (+ count 1)
-	     limit
-	     path)
-    ;;(internal-error "il:eval returned F")
-    )
-   ((il:binary-expression? expression)
-    (il:eval
-     (il:make-continuation
-      3
-      ;; We don't close over handler.
-      (lambda (value1 count limit path continuation environment)
-       (il:eval (il:make-continuation
-		 4
-		 ;; We don't close over handler.
-		 (lambda (value2 count limit path continuation value1)
-		  ((il:binary-expression-procedure expression)
-		   continuation handler value1 value2 count limit path)
-		  ;;(internal-error "il:eval returned G")
-		  )
-		 continuation
-		 value1)
-		handler
-		(il:binary-expression-expression2 expression)
-		environment
-		count
-		limit
-		path)
-       ;;(internal-error "il:eval returned H")
-       )
-      continuation
-      environment)
-     handler
-     (il:binary-expression-expression1 expression)
-     environment
-     (+ count 1)
-     limit
-     path)
-    ;;(internal-error "il:eval returned I")
-    )
-   ((il:ternary-expression? expression)
-    (il:eval
-     (il:make-continuation
-      5
-      ;; We don't close over handler.
-      (lambda (value1 count limit path continuation environment)
-       (il:eval
-	(il:make-continuation
-	 6
-	 ;; We don't close over handler.
-	 (lambda (value2 count limit path continuation environment value1)
-	  (il:eval
-	   (il:make-continuation
-	    7
-	    ;; We don't close over handler.
-	    (lambda (value3 count limit path continuation value1 value2)
-	     ((il:ternary-expression-procedure expression)
-	      continuation handler value1 value2 value3 count limit path)
-	     ;;(internal-error "il:eval returned J")
-	     )
-	    continuation
-	    value1
-	    value2)
-	   handler
-	   (il:ternary-expression-expression3 expression)
-	   environment
-	   count
-	   limit
-	   path)
-	  ;;(internal-error "il:eval returned K")
-	  )
-	 continuation
+  (let ((environment (il:restrict environment expression)))
+   (cond
+    ((= count limit)
+     ;; here I am
+     (set! *id* (+ *id* 1))
+     (begin
+      (display "making checkpoint, count=")
+      (write count)
+      (display ", id=")
+      (write *id*)
+      (newline))
+     (il:raise
+      handler (make-il:checkpoint *id* continuation expression environment count))
+     ;;(internal-error "il:eval returned A")
+     )
+    ((il:constant-expression? expression)
+     (il:continue continuation
+		  (il:constant-expression-value expression)
+		  (+ count 1)
+		  limit
+		  path)
+     ;;(internal-error "il:eval returned B")
+     )
+    ((il:variable-access-expression? expression)
+     (il:continue continuation
+		  (il:lookup (il:variable-access-expression-variable expression)
+			     environment)
+		  (+ count 1)
+		  limit
+		  path)
+     ;;(internal-error "il:eval returned C")
+     )
+    ((il:lambda-expression? expression)
+     (il:continue continuation
+		  (make-il:nonrecursive-closure expression environment)
+		  (+ count 1)
+		  limit
+		  path)
+     ;;(internal-error "il:eval returned D")
+     )
+    ((il:unary-expression? expression)
+     (il:eval (il:make-continuation
+	       2
+	       ;; We don't close over handler.
+	       (lambda (value count limit path continuation)
+		((il:unary-expression-procedure expression)
+		 continuation handler value count limit path)
+		;;(internal-error "il:eval returned E")
+		)
+	       continuation)
+	      handler
+	      (il:unary-expression-expression expression)
+	      environment
+	      (+ count 1)
+	      limit
+	      path)
+     ;;(internal-error "il:eval returned F")
+     )
+    ((il:binary-expression? expression)
+     (il:eval (il:make-continuation
+	       3
+	       ;; We don't close over handler.
+	       (lambda (value1 count limit path continuation environment)
+		(il:eval (il:make-continuation
+			  4
+			  ;; We don't close over handler.
+			  (lambda (value2 count limit path continuation value1)
+			   ((il:binary-expression-procedure expression)
+			    continuation handler value1 value2 count limit path)
+			   ;;(internal-error "il:eval returned G")
+			   )
+			  continuation
+			  value1)
+			 handler
+			 (il:binary-expression-expression2 expression)
+			 environment
+			 count
+			 limit
+			 path)
+		;;(internal-error "il:eval returned H")
+		)
+	       continuation
+	       environment)
+	      handler
+	      (il:binary-expression-expression1 expression)
+	      environment
+	      (+ count 1)
+	      limit
+	      path)
+     ;;(internal-error "il:eval returned I")
+     )
+    ((il:ternary-expression? expression)
+     (il:eval
+      (il:make-continuation
+       5
+       ;; We don't close over handler.
+       (lambda (value1 count limit path continuation environment)
+	(il:eval
+	 (il:make-continuation
+	  6
+	  ;; We don't close over handler.
+	  (lambda (value2 count limit path continuation environment value1)
+	   (il:eval
+	    (il:make-continuation
+	     7
+	     ;; We don't close over handler.
+	     (lambda (value3 count limit path continuation value1 value2)
+	      ((il:ternary-expression-procedure expression)
+	       continuation handler value1 value2 value3 count limit path)
+	      ;;(internal-error "il:eval returned J")
+	      )
+	     continuation
+	     value1
+	     value2)
+	    handler
+	    (il:ternary-expression-expression3 expression)
+	    environment
+	    count
+	    limit
+	    path)
+	   ;;(internal-error "il:eval returned K")
+	   )
+	  continuation
+	  environment
+	  value1)
+	 handler
+	 (il:ternary-expression-expression2 expression)
 	 environment
-	 value1)
-	handler
-	(il:ternary-expression-expression2 expression)
-	environment
-	count
-	limit
-	path)
-       ;;(internal-error "il:eval returned L")
-       )
-      continuation
-      environment)
-     handler
-     (il:ternary-expression-expression1 expression)
-     environment
-     (+ count 1)
-     limit
-     path)
-    ;;(internal-error "il:eval returned M")
-    )
-   ((il:letrec-expression? expression)
-    (il:eval continuation
-	     handler
-	     (il:letrec-expression-expression expression)
-	     ;;\needswork: Not safe for space.
-	     (append
-	      (map-indexed (lambda (variable index)
-			    (make-il:binding
-			     variable
-			     (make-il:recursive-closure
-			      (il:letrec-expression-variables expression)
-			      (il:letrec-expression-expressions expression)
-			      index
-			      environment)))
-			   (il:letrec-expression-variables expression))
-	      environment)
-	     (+ count 1)
-	     limit
-	     path)
-    ;;(internal-error "il:eval returned N")
-    )
-   (else (internal-error))))
+	 count
+	 limit
+	 path)
+	;;(internal-error "il:eval returned L")
+	)
+       continuation
+       environment)
+      handler
+      (il:ternary-expression-expression1 expression)
+      environment
+      (+ count 1)
+      limit
+      path)
+     ;;(internal-error "il:eval returned M")
+     )
+    ((il:letrec-expression? expression)
+     (il:eval continuation
+	      handler
+	      (il:letrec-expression-expression expression)
+	      (append
+	       (map-indexed (lambda (variable index)
+			     (make-il:binding
+			      variable
+			      (make-il:recursive-closure
+			       (il:letrec-expression-variables expression)
+			       (il:letrec-expression-expressions expression)
+			       index
+			       environment)))
+			    (il:letrec-expression-variables expression))
+	       environment)
+	      (+ count 1)
+	      limit
+	      path)
+     ;;(internal-error "il:eval returned N")
+     )
+    (else (internal-error)))))
 
  (define (il:checkpoint-*j
 	  continuation handler value1 value2 value3 count limit path)
@@ -1322,6 +1332,11 @@
 		   77
 		   ;; We don't close over continuation66 or handler66.
 		   (lambda (checkpoint77)
+		    ;; here I am
+		    (begin
+		     (display "(il:continuation-id continuation)=")
+		     (write (il:continuation-id continuation66))
+		     (newline))
 		    (when *debugging?*
 		     (when (= (il:continuation-id continuation66) 9)
 		      (display "k=k9, raising instead of continuing")
@@ -1389,6 +1404,15 @@
 	       (display "starting resume(c), path=")
 	       (write path55)
 	       (newline))
+	      ;; here I am
+	      (begin
+	       (display "id=")
+	       (write (il:checkpoint-id value55))
+	       (display ", counts=")
+	       (write (list count55
+			    (il:checkpoint-count value55)
+			    (+ count (quotient (- count8 count) 2))))
+	       (newline))
 	      (unless (= count55 (il:checkpoint-count value55))
 	       (internal-error
 		"(not (= count55 (il:checkpoint-count value55)))"
@@ -1416,12 +1440,14 @@
 			       (il:count-dummies
 				continuation9
 				(il:checkpoint-continuation value55))))
+	      ;; This can raise when resume(c) checkpoints which can happen
+	      ;; when step 3 is called from step 4. That is why we don't pass
+	      ;; in a dummy handler but pass in handler55.
 	      (il:eval (il:replace-dummy
 			continuation9
 			continuation55
 			(il:checkpoint-continuation value55))
-		       (il:handle
-			84 (lambda (value) (internal-error "Dummy handler 84")))
+		       handler55
 		       (il:checkpoint-expression value55)
 		       (il:checkpoint-environment value55)
 		       ;; These are the count and limit for the second half of
@@ -1492,6 +1518,10 @@
      ;; When step 1 is called from step 3 which is called from step 4, the
      ;; call to primops checkpoints and doesn't continue. So we have to
      ;; continue through the handler.
+     ;; here I am
+     (begin
+      (display "bingo")
+      (newline))
      (step2 checkpoint99 limit limit path continuation value1 value2 value3)
      ;;(internal-error "il:checkpoint-*j returned K")
      ))
