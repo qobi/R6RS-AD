@@ -1365,6 +1365,12 @@
 				(lambda (value count limit path)
 				 (internal-error "Dummy continuation 12")))
 			       value8 value9 count8 limit8 path8)))
+			;; I figured this out once but don't remember the reason
+			;; now why when k=k9 or k=k12 you need to return rather
+			;; than call the continuation and how this situation
+			;; can arise in the first place. But because of this
+			;; step 1 or step 0 nested in step 4 has to handle the
+			;; case of a return instead of a continuation call.
 			(when *debugging?*
 			 (when (= (il:continuation-id continuation8) 9)
 			  (display

@@ -887,6 +887,73 @@
   ;;(internal-error "reverse-mode returned B")
   )
 
+ (define (reverse-mode-for-base-case-of-checkpoint-*j continuation
+						      handler
+						      map-independent
+						      map-dependent
+						      for-each-dependent1!
+						      for-each-dependent2!
+						      f
+						      x
+						      y-sensitivity)
+  ;; This is a special version of reverse-mode that handles the case where f
+  ;; checkpoints.
+  (set! *e* (+ *e* 1))
+  (let ((x-reverse (map-independent tapify x)))
+   (define (step0-end
+	    handler y-reverse count limit path x-reverse y-sensitivity)
+    (for-each-dependent1!
+     (lambda (y-reverse)
+      (when (and (tape? y-reverse) (not (<_e (tape-epsilon y-reverse) *e*)))
+       (determine-fanout! y-reverse)))
+     y-reverse)
+    (for-each-dependent1!
+     (lambda (y-reverse)
+      (when (and (tape? y-reverse) (not (<_e (tape-epsilon y-reverse) *e*)))
+       (initialize-sensitivity! y-reverse)))
+     y-reverse)
+    (for-each-dependent1!
+     (lambda (y-reverse)
+      (when (and (tape? y-reverse) (not (<_e (tape-epsilon y-reverse) *e*)))
+       (determine-fanout! y-reverse)))
+     y-reverse)
+    (for-each-dependent2!
+     (lambda (y-reverse y-sensitivity)
+      (when (and (tape? y-reverse) (not (<_e (tape-epsilon y-reverse) *e*)))
+       (reverse-phase! y-sensitivity y-reverse)))
+     y-reverse
+     y-sensitivity)
+    (let ((x-sensitivity (map-independent tape-sensitivity x-reverse)))
+     (set! *e* (- *e* 1))
+     (il:continue
+      continuation
+      handler
+      (list
+       (map-dependent
+	(lambda (y-reverse)
+	 (if (or (not (tape? y-reverse)) (<_e (tape-epsilon y-reverse) *e*))
+	     y-reverse
+	     (tape-primal y-reverse)))
+	y-reverse)
+       x-sensitivity)
+      count
+      limit
+      path)
+     ;;(internal-error
+     ;; "reverse-mode-for-base-case-of-checkpoint-*j returned A")
+     ))
+   (f (il:make-continuation 18 step0-end x-reverse y-sensitivity)
+      (il:handle
+       84
+       (lambda (checkpoint)
+	(step0-end
+	 ;; I think count, limit, and path are never used.
+	 handler checkpoint 'count 'limit 'path x-reverse y-sensitivity)))
+      x-reverse)
+   ;;(internal-error
+   ;; "reverse-mode-for-base-case-of-checkpoint-*j returned B")
+   ))
+
  (define (il:j* continuation handler value1 value2 value3 count limit path)
   (forward-mode continuation
 		handler
@@ -915,6 +982,24 @@
 		value2
 		value3)
   ;;(internal-error "il:*j returned B")
+  )
+
+ (define (il:base-case-of-checkpoint-*j
+	  continuation handler value1 value2 value3 count limit path)
+  (reverse-mode-for-base-case-of-checkpoint-*j
+   continuation
+   handler
+   il:walk1
+   il:walk1
+   il:walk1!
+   il:walk2!
+   (lambda (continuation handler x)
+    (il:apply continuation handler value1 x count limit path)
+    ;;(internal-error "il:base-case-of-checkpoint-*j returned A")
+    )
+   value2
+   value3)
+  ;;(internal-error "il:base-case-of-checkpoint-*j returned B")
   )
 
  (define (il:free-variables expression)
@@ -1164,7 +1249,7 @@
       (newline))
      ;;\needswork: This continuation can be eta converted when we remove the
      ;;            debugging printout.
-     (il:*j
+     (il:base-case-of-checkpoint-*j
       (il:make-continuation
        15
        (lambda (handler15 value15 count15 limit15 path15 continuation)
@@ -1346,6 +1431,12 @@
 		   77
 		   ;; We don't close over continuation66 or handler66.
 		   (lambda (checkpoint77)
+		    ;; I figured this out once but don't remember the reason
+		    ;; now why when k=k9 or k=k12 you need to raise rather
+		    ;; than call the continuation and how this situation
+		    ;; can arise in the first place. But because of this
+		    ;; step 1 or step 0 nested in step 4 has to handle the
+		    ;; case of a raise instead of a continuation call.
 		    (when *debugging?*
 		     (when (= (il:continuation-id continuation66) 9)
 		      (display "k=k9, raising instead of continuing")
