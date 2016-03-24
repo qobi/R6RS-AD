@@ -211,9 +211,6 @@
 
  (define dreal? (lift-real^n->boolean real?))
 
-;;;\needswork: There may be a bug here and in the original AD.ss as to where
-;;; (set! *e* (- *e* 1)) belongs in forward-mode and reverse-mode.
-
  (define (determine-fanout! tape)
   ;; The mutation here is OK with checkpoints because a chackpoint cannot
   ;; occur in the critical section.
@@ -482,7 +479,9 @@
 				  (il:checkpoint-environment x)
 				  (il:checkpoint-environment x-prime))
 			(il:checkpoint-count x)))
-   (else (run-time-error "Values don't conform: ~s ~s" x x-prime))))
+   (else (run-time-error "Values don't conform: ~s ~s"
+			 (il:externalize x)
+			 (il:externalize x-prime)))))
 
  (define (il:walk1! f x)
   (cond ((eq? x #t) #f)
@@ -552,7 +551,9 @@
      f (il:checkpoint-continuation x) (il:checkpoint-continuation x-prime))
     (il:walk2!
      f (il:checkpoint-environment x) (il:checkpoint-environment x-prime)))
-   (else (run-time-error "Values don't conform: ~s ~s" x x-prime))))
+   (else (run-time-error "Values don't conform: ~s ~s"
+			 (il:externalize x)
+			 (il:externalize x-prime)))))
 
  (define (il:count-dummies c x)
   (cond
@@ -753,24 +754,24 @@
   (f (il:make-continuation
       0
       (lambda (y-forward count limit path)
-       (set! *e* (- *e* 1))
-       (il:call-continuation
-	continuation
-	(list (map-dependent (lambda (y-forward)
-			      (if (or (not (dual-number? y-forward))
-				      (<_e (dual-number-epsilon y-forward) *e*))
-				  y-forward
-				  (dual-number-primal y-forward)))
-			     y-forward)
-	      (map-dependent (lambda (y-forward)
-			      (if (or (not (dual-number? y-forward))
-				      (<_e (dual-number-epsilon y-forward) *e*))
-				  0
-				  (dual-number-perturbation y-forward)))
-			     y-forward))
-	count
-	limit
-	path)))
+       (let ((y (map-dependent
+		 (lambda (y-forward)
+		  (if (and (dual-number? y-forward)
+			   (not (<_e (dual-number-epsilon y-forward) *e*)))
+		      (dual-number-primal y-forward)
+		      y-forward))
+		 y-forward))
+	     (y-perturbation
+	      (map-dependent
+	       (lambda (y-forward)
+		(if (and (dual-number? y-forward)
+			 (not (<_e (dual-number-epsilon y-forward) *e*)))
+		    (dual-number-perturbation y-forward)
+		    0))
+	       y-forward)))
+	(set! *e* (- *e* 1))
+	(il:call-continuation
+	 continuation (list y y-perturbation) count limit path))))
      (map-independent (lambda (x x-perturbation)
 		       (make-dual-number *e* x x-perturbation))
 		      x
@@ -813,21 +814,17 @@
 	   (reverse-phase! y-sensitivity y-reverse)))
 	 y-reverse
 	 y-sensitivity)
-	(let ((x-sensitivity (map-independent tape-sensitivity x-reverse)))
+	(let ((x-sensitivity (map-independent tape-sensitivity x-reverse))
+	      (y (map-dependent
+		  (lambda (y-reverse)
+		   (if (and (tape? y-reverse)
+			    (not (<_e (tape-epsilon y-reverse) *e*)))
+		       (tape-primal y-reverse)
+		       y-reverse))
+		  y-reverse)))
 	 (set! *e* (- *e* 1))
 	 (il:call-continuation
-	  continuation
-	  (list
-	   (map-dependent
-	    (lambda (y-reverse)
-	     (if (or (not (tape? y-reverse)) (<_e (tape-epsilon y-reverse) *e*))
-		 y-reverse
-		 (tape-primal y-reverse)))
-	    y-reverse)
-	   x-sensitivity)
-	  count
-	  limit
-	  path)))
+	  continuation (list y x-sensitivity) count limit path)))
        x-reverse
        y-sensitivity)
       x-reverse)))
@@ -876,22 +873,17 @@
 		(reverse-phase! y-sensitivity y-reverse)))
 	      y-reverse
 	      y-sensitivity)
-	     (let ((x-sensitivity (map-independent tape-sensitivity x-reverse)))
+	     (let ((x-sensitivity (map-independent tape-sensitivity x-reverse))
+		   (y (map-dependent
+		       (lambda (y-reverse)
+			(if (and (tape? y-reverse)
+				 (not (<_e (tape-epsilon y-reverse) *e*)))
+			    (tape-primal y-reverse)
+			    y-reverse))
+		       y-reverse)))
 	      (set! *e* (- *e* 1))
 	      (il:call-continuation
-	       continuation
-	       (list
-		(map-dependent
-		 (lambda (y-reverse)
-		  (if (or (not (tape? y-reverse))
-			  (<_e (tape-epsilon y-reverse) *e*))
-		      y-reverse
-		      (tape-primal y-reverse)))
-		 y-reverse)
-		x-sensitivity)
-	       count
-	       limit
-	       path)))
+	       continuation (list y x-sensitivity) count limit path)))
 	    x-reverse
 	    y-sensitivity))
 	  (checkpoint (f continuation x-reverse)))
@@ -2011,9 +2003,9 @@
 	;; derivatives of these.
 	(make-binary-primitive
 	 'expt (lambda (y x) (expt (primal* y) (primal* x))))
-	(make-unary-primitive 'int (lambda (x) (floor (primal* x))))
+	(make-unary-primitive 'floor (lambda (x) (floor (primal* x))))
 	(make-binary-primitive
-	 'mod (lambda (y x) (modulo (primal* y) (primal* x))))
+	 'modulo (lambda (y x) (modulo (primal* y) (primal* x))))
 	(make-ternary-primitive 'j* il:j*)
 	(make-ternary-primitive '*j il:*j)
 	(make-ternary-primitive 'checkpoint-*j il:checkpoint-*j)))

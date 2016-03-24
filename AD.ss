@@ -247,24 +247,28 @@
   ;; needs work: We don't support what the AD community calls tangent vector
   ;;             mode.
   (set! *e* (+ *e* 1))
-  (let ((y-forward
-	 (f (map-independent (lambda (x x-perturbation)
-			      (make-dual-number *e* x x-perturbation))
-			     x
-			     x-perturbation))))
+  (let* ((y-forward
+	  (f (map-independent (lambda (x x-perturbation)
+			       (make-dual-number *e* x x-perturbation))
+			      x
+			      x-perturbation)))
+	 (y (map-dependent
+	     (lambda (y-forward)
+	      (if (and (dual-number? y-forward)
+		       (not (<_e (dual-number-epsilon y-forward) *e*)))
+		  (dual-number-primal y-forward)
+		  y-forward))
+	     y-forward))
+	 (y-perturbation
+	  (map-dependent
+	   (lambda (y-forward)
+	    (if (and (dual-number? y-forward)
+		     (not (<_e (dual-number-epsilon y-forward) *e*)))
+		(dual-number-perturbation y-forward)
+		0))
+	   y-forward)))
    (set! *e* (- *e* 1))
-   (list (map-dependent (lambda (y-forward)
-			 (if (or (not (dual-number? y-forward))
-				 (<_e (dual-number-epsilon y-forward) *e*))
-			     y-forward
-			     (dual-number-primal y-forward)))
-			y-forward)
-	 (map-dependent (lambda (y-forward)
-			 (if (or (not (dual-number? y-forward))
-				 (<_e (dual-number-epsilon y-forward) *e*))
-			     0
-			     (dual-number-perturbation y-forward)))
-			y-forward))))
+   (list y y-perturbation)))
 
  (define (derivative-F f)
   (lambda (x)
@@ -400,15 +404,16 @@
 		 y-reverse
 		 y-sensitivity)
 		(map-independent tape-sensitivity x-reverse))
-	       y-sensitivities)))
+	       y-sensitivities))
+	 (y (map-dependent
+	     (lambda (y-reverse)
+	      (if (and (tape? y-reverse)
+		       (not (<_e (tape-epsilon y-reverse) *e*)))
+		  (tape-primal y-reverse)
+		  y-reverse))
+	     y-reverse)))
    (set! *e* (- *e* 1))
-   (list (map-dependent
-	  (lambda (y-reverse)
-	   (if (or (not (tape? y-reverse)) (<_e (tape-epsilon y-reverse) *e*))
-	       y-reverse
-	       (tape-primal y-reverse)))
-	  y-reverse)
-	 x-sensitivities)))
+   (list y x-sensitivities)))
 
  (define (derivative-R f)
   (lambda (x)
