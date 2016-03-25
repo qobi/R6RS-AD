@@ -7,12 +7,12 @@
 
  ;; All threading of path is for debugging.
 
- (define *debugging?* #f)
+ (define *debugging?* #t)
 
  ;;\needswork: The base case would nominally be triggered when count4-count=1
  ;;            but this difference is to compensate for the fudge factors in
  ;;            the counts.
- (define *base-case-duration* 6)
+ (define *base-case-duration* 28)
 
  (define *e* 0)
 
@@ -753,7 +753,7 @@
   (set! *e* (+ *e* 1))
   (f (il:make-continuation
       0
-      (lambda (y-forward count limit path)
+      (lambda (y-forward count limit path continuation)
        (let ((y (map-dependent
 		 (lambda (y-forward)
 		  (if (and (dual-number? y-forward)
@@ -771,7 +771,8 @@
 	       y-forward)))
 	(set! *e* (- *e* 1))
 	(il:call-continuation
-	 continuation (list y y-perturbation) count limit path))))
+	 continuation (list y y-perturbation) count limit path)))
+      continuation)
      (map-independent (lambda (x x-perturbation)
 		       (make-dual-number *e* x x-perturbation))
 		      x
@@ -792,7 +793,7 @@
   (let ((x-reverse (map-independent tapify x)))
    (f (il:make-continuation
        1
-       (lambda (y-reverse count limit path x-reverse y-sensitivity)
+       (lambda (y-reverse count limit path continuation x-reverse y-sensitivity)
 	(for-each-dependent1!
 	 (lambda (y-reverse)
 	  (when (and (tape? y-reverse) (not (<_e (tape-epsilon y-reverse) *e*)))
@@ -825,6 +826,7 @@
 	 (set! *e* (- *e* 1))
 	 (il:call-continuation
 	  continuation (list y x-sensitivity) count limit path)))
+       continuation
        x-reverse
        y-sensitivity)
       x-reverse)))
@@ -847,7 +849,8 @@
    (let* ((continuation
 	   (il:make-continuation
 	    18
-	    (lambda (y-reverse count limit path x-reverse y-sensitivity)
+	    (lambda (y-reverse count limit path
+			       continuation x-reverse y-sensitivity)
 	     (for-each-dependent1!
 	      (lambda (y-reverse)
 	       (when (and (tape? y-reverse)
@@ -884,6 +887,7 @@
 	      (set! *e* (- *e* 1))
 	      (il:call-continuation
 	       continuation (list y x-sensitivity) count limit path)))
+	    continuation
 	    x-reverse
 	    y-sensitivity))
 	  (checkpoint (f continuation x-reverse)))

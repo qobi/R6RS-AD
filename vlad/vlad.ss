@@ -10,12 +10,12 @@
 
  ;; All threading of path is for debugging.
 
- (define *debugging?* #f)
+ (define *debugging?* #t)
 
  ;;\needswork: The base case would nominally be triggered when count8-count=1
  ;;            but this difference is to compensate for the fudge factors in
  ;;            the counts.
- (define *base-case-duration* 6)
+ (define *base-case-duration* 28)
 
  (define <_e <)
 
@@ -818,7 +818,7 @@
 		       epsilon)
   (f (il:make-continuation
       0
-      (lambda (handler y-forward epsilon count limit path)
+      (lambda (handler y-forward epsilon count limit path continuation)
        (let ((y
 	      (map-dependent (lambda (y-forward)
 			      (if (and (dual-number? y-forward)
@@ -844,7 +844,8 @@
 		     limit
 		     path)
 	;;(internal-error "forward-mode returned A")
-	)))
+	))
+      continuation)
      handler
      (map-independent (lambda (x x-perturbation)
 		       (make-dual-number (+ epsilon 1) x x-perturbation))
@@ -868,7 +869,7 @@
    (f (il:make-continuation
        1
        (lambda (handler y-reverse epsilon count limit path
-			x-reverse y-sensitivity)
+			continuation x-reverse y-sensitivity)
 	(for-each-dependent1!
 	 (lambda (y-reverse)
 	  (when (and (tape? y-reverse)
@@ -911,6 +912,7 @@
 		      path)
 	 ;;(internal-error "reverse-mode returned A")
 	 ))
+       continuation
        x-reverse
        y-sensitivity)
       handler
@@ -932,8 +934,8 @@
   ;; This is a special version of reverse-mode that handles the case where f
   ;; checkpoints.
   (let ((x-reverse (map-independent (lambda (x) (tapify (+ epsilon 1) x)) x)))
-   (define (step0-end
-	    handler y-reverse epsilon count limit path x-reverse y-sensitivity)
+   (define (step0-end handler y-reverse epsilon count limit path
+		      continuation x-reverse y-sensitivity)
     (for-each-dependent1!
      (lambda (y-reverse)
       (when (and (tape? y-reverse) (not (<_e (tape-epsilon y-reverse) epsilon)))
@@ -973,13 +975,13 @@
      ;;(internal-error
      ;; "reverse-mode-for-base-case-of-checkpoint-*j returned A")
      ))
-   (f (il:make-continuation 18 step0-end x-reverse y-sensitivity)
+   (f (il:make-continuation 18 step0-end continuation x-reverse y-sensitivity)
       (il:handle
        84
        (lambda (checkpoint)
 	;; I think count, limit, and path are never used.
 	(step0-end handler checkpoint epsilon 'count 'limit 'path
-		   x-reverse y-sensitivity)))
+		   continuation x-reverse y-sensitivity)))
       x-reverse
       (+ epsilon 1))
    ;;(internal-error
@@ -1578,6 +1580,7 @@
 		      count55
 		      limit55
 		      path55)
+	      ;; epsilon55 is ignored.
 	      ;;\needswork: Could eliminate (il:checkpoint-count value55).
 	      (when *debugging?*
 	       (display "starting resume(c), path=")
@@ -1620,7 +1623,7 @@
 		       handler55
 		       (il:checkpoint-expression value55)
 		       (il:checkpoint-environment value55)
-		       epsilon55
+		       (il:checkpoint-epsilon value55)
 		       ;; These are the count and limit for the second half of
 		       ;; the computation.
 		       (il:checkpoint-count value55)
